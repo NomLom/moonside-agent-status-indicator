@@ -9,9 +9,9 @@ NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_TX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 NAME_PREFIX = "MOONSIDE"
 
-WORKING_CMD = "THEME.BEAT2.255,255,255,0,0,140,"
-IDLE_CMD = "COLOR255180050"
-INPUT_CMD = "COLOR200000255"
+WORKING_CMD = "THEME.BEAT2.255,255,255,0,110,255,"
+IDLE_CMD = "COLOR255214170"
+INPUT_CMD = "THEME.FIRE2.255,80,190"
 SUCCESS_CMD = "COLOR000255000"
 FAILED_CMD = "COLOR255000000"
 CANCELLED_CMD = "LEDOFF"
@@ -93,6 +93,8 @@ class MoonsideManager:
             await asyncio.sleep(0.3)
             await self.send_command(INPUT_CMD)
         elif state == "working":
+            await self.send_command("LEDON")
+            await asyncio.sleep(0.3)
             await self.send_command(WORKING_CMD)
         elif state == "success":
             await self.send_command("LEDON")
