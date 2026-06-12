@@ -12,6 +12,7 @@ if str(_SUBMODULE) not in sys.path:
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 _DEFAULT_STATUS_DIR = "/tmp/hermes_agent_status"
+_PLACEHOLDER_ADDRESSES = {None, "", "YOUR-BLE-DEVICE-ADDRESS"}
 
 _DEFAULT_STATUSES: dict[str, str] = {
     "idle": "😴",
@@ -80,6 +81,21 @@ def _status_block(raw: dict[str, Any]) -> dict[str, Any]:
     return raw.get("agent_status") or raw.get("claude_status") or {}
 
 
+def _fallback_submodule_address() -> str | None:
+    candidate = _SUBMODULE / "config.yaml"
+    if not candidate.exists():
+        return None
+    import yaml
+    try:
+        raw: dict[str, Any] = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return None
+    address = (raw.get("device", {}) or {}).get("address")
+    if address in _PLACEHOLDER_ADDRESSES:
+        return None
+    return str(address)
+
+
 def load_config(path: Path | None = None) -> AgentStatusConfig:
     path = _resolve_config_path(path)
     if not path.exists():
@@ -95,6 +111,10 @@ def load_config(path: Path | None = None) -> AgentStatusConfig:
     env_address = os.getenv("BK_LIGHT_ADDRESS")
     if env_address:
         device_data["address"] = env_address
+    elif device_data.get("address") in _PLACEHOLDER_ADDRESSES:
+        fallback_address = _fallback_submodule_address()
+        if fallback_address:
+            device_data["address"] = fallback_address
     device = DeviceSettings(**_pick_fields(device_data, DeviceSettings))
 
     panel = PanelSettings(**_pick_fields(raw.get("panels", {}), PanelSettings))
