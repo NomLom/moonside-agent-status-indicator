@@ -22,6 +22,7 @@ from .display import (
 )
 from .emoji_font import resolve_emoji_font
 from .watcher import SessionWatcher
+from .moonside import MoonsideManager, classify_state
 
 VALID_STATES = {"idle", "thinking", "tool_use", "permission", "success", "failed", "cancelled"}
 POLL_INTERVAL = 0.3
@@ -101,6 +102,27 @@ def _patch_ack_stage_two_alt2(display_session: object) -> None:
 
 
 async def run(config: AgentStatusConfig, verbose: bool = False) -> None:
+    transport = "bk"
+    try:
+        from bleak import BleakClient, BleakScanner
+        device = None
+        if config.device.address:
+            try:
+                device = await BleakScanner.find_device_by_address(config.device.address, timeout=config.device.scan_timeout, cached=False)
+            except TypeError:
+                device = await BleakScanner.find_device_by_address(config.device.address, timeout=config.device.scan_timeout)
+        if device is not None:
+            client = BleakClient(device, timeout=10.0)
+            await client.connect()
+            if client.is_connected:
+                for svc in client.services:
+                    if str(svc.uuid).lower() == "6e400001-b5a3-f393-e0a9-e50e24dcca9e":
+                        transport = "moonside"
+                        break
+            await client.disconnect()
+    except Exception:
+        pass
+
     submodule = Path(__file__).resolve().parents[1] / "Bk-Light-AppBypass"
     if str(submodule) not in sys.path:
         sys.path.insert(0, str(submodule))
@@ -143,34 +165,57 @@ async def run(config: AgentStatusConfig, verbose: bool = False) -> None:
 
     while True:
         try:
-            async with PanelManager(app_config) as manager:
-                print(f"Connected. Watching {status_dir}/ for session state files.")
-                print("Press Ctrl+C to stop.\n")
+            if transport == "moonside":
+                async with MoonsideManager(config.device.address, config.device.scan_timeout) as manager:
+                    print(f"Connected to Moonside. Watching {status_dir}/ for session state files.")
+                    print("Press Ctrl+C to stop.\n")
+                    while True:
+                        states = read_session_states(status_dir, config.status.stale_threshold)
+                        active_ids = set(states.keys())
+                        slots.update(active_ids)
+                        watcher.sync(active_ids)
+                        current = slots.snapshot(states)
+                        now = time.monotonic()
+                        changed = current != last_snapshot
+                        stale = now - last_send_time >= REFRESH_INTERVAL
+                        if changed or stale:
+                            active_count = sum(1 for s in current if s)
+                            parts = [s or "---" for s in current]
+                            lamp_state = classify_state(current)
+                            print(f"  [{active_count}/{SlotManager.MAX_SLOTS}] {', '.join(parts)} -> lamp={lamp_state}")
+                            await manager.send_state(current)
+                            last_snapshot = current
+                            last_send_time = now
+                        await asyncio.sleep(POLL_INTERVAL)
+            else:
+                async with PanelManager(app_config) as manager:
+                    print(f"Connected. Watching {status_dir}/ for session state files.")
+                    print("Press Ctrl+C to stop.\n")
 
-                while True:
-                    states = read_session_states(status_dir, config.status.stale_threshold)
-                    active_ids = set(states.keys())
-                    slots.update(active_ids)
-                    watcher.sync(active_ids)
-                    current = slots.snapshot(states)
+                    while True:
+                        states = read_session_states(status_dir, config.status.stale_threshold)
+                        active_ids = set(states.keys())
+                        slots.update(active_ids)
+                        watcher.sync(active_ids)
+                        current = slots.snapshot(states)
 
-                    now = time.monotonic()
-                    changed = current != last_snapshot
-                    stale = now - last_send_time >= REFRESH_INTERVAL
+                        now = time.monotonic()
+                        changed = current != last_snapshot
+                        stale = now - last_send_time >= REFRESH_INTERVAL
 
-                    if changed or stale:
-                        active_count = sum(1 for s in current if s)
-                        parts = [s or "---" for s in current]
-                        print(f"  [{active_count}/{SlotManager.MAX_SLOTS}] {', '.join(parts)}")
-                        frame = compose_frame(
-                            current, quadrants, empty_quad,
-                            fullscreen_idle, canvas_size,
-                        )
-                        await manager.send_image(frame, delay=0.2)
-                        last_snapshot = current
-                        last_send_time = now
+                        if changed or stale:
+                            active_count = sum(1 for s in current if s)
+                            parts = [s or "---" for s in current]
+                            print(f"  [{active_count}/{SlotManager.MAX_SLOTS}] {', '.join(parts)}")
+                            frame = compose_frame(
+                                current, quadrants, empty_quad,
+                                fullscreen_idle, canvas_size,
+                            )
+                            await manager.send_image(frame, delay=0.2)
+                            last_snapshot = current
+                            last_send_time = now
 
-                    await asyncio.sleep(POLL_INTERVAL)
+                        await asyncio.sleep(POLL_INTERVAL)
         except KeyboardInterrupt:
             watcher.stop_all()
             print("\nShutting down...")
