@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_STATUS_DIR = Path(os.getenv("BK_LIGHT_STATUS_DIR", "/tmp/hermes_agent_status"))
+DEFAULT_STATUS_DIR = Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/hermes_agent_status")
 _VALID_STATES = {"idle", "thinking", "tool_use", "permission"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _LOCK = threading.RLock()
@@ -23,7 +23,7 @@ _THREAD_TO_SESSION: dict[int, str] = {}
 _TASK_TO_SESSION: dict[str, str] = {}
 
 def _status_dir() -> Path:
-    return Path(os.getenv("BK_LIGHT_STATUS_DIR", str(DEFAULT_STATUS_DIR)))
+    return Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or str(DEFAULT_STATUS_DIR))
 
 
 def _safe_session_name(session_id: str | None) -> str | None:
@@ -248,3 +248,4 @@ def register(ctx) -> None:
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("on_session_finalize", _on_session_finalize)
     ctx.register_hook("on_session_reset", _on_session_reset)
+

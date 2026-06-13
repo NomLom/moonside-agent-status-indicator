@@ -14,7 +14,7 @@ import re
 import sys
 from pathlib import Path
 
-STATUS_DIR = Path(os.getenv("BK_LIGHT_STATUS_DIR", "/tmp/hermes_agent_status"))
+STATUS_DIR = Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/hermes_agent_status")
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 EVENT_STATE_MAP: dict[str, str] = {
@@ -76,3 +76,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

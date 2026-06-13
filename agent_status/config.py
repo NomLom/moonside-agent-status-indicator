@@ -109,7 +109,7 @@ def load_config(path: Path | None = None) -> AgentStatusConfig:
     raw: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     device_data = raw.get("device", {})
-    env_address = os.getenv("BK_LIGHT_ADDRESS")
+    env_address = os.getenv("MOONSIDE_ADDRESS") or os.getenv("AGENT_STATUS_DEVICE_ADDRESS") or os.getenv("BK_LIGHT_ADDRESS")
     if env_address:
         device_data["address"] = env_address
     elif device_data.get("address") in _PLACEHOLDER_ADDRESSES:
@@ -150,3 +150,4 @@ def to_app_config(config: AgentStatusConfig):
         tile_height=config.panel.tile_height,
     )
     return AppConfig(device=device, panels=panels)
+

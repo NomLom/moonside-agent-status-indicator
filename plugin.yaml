@@ -1,4 +1,4 @@
-name: bk-light-status
-version: 1.0.0
-description: "BK-Light status bridge for Hermes Agent. Registers hook callbacks that write per-session state files for the BK-Light panel runner."
+name: moonside-status
+version: 1.1.0
+description: "Moonside status bridge for Hermes Agent. Registers hook callbacks that write per-session state files for the Moonside lamp runner or BK-Light compatibility path."
 author: NomLom / Hermes

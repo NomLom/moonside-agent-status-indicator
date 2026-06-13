@@ -14,7 +14,7 @@ from typing import Any
 
 DEFAULT_BASE_URL = os.getenv("HERMES_API_BASE_URL", "http://127.0.0.1:8642")
 DEFAULT_API_KEY = os.getenv("HERMES_API_KEY", "")
-DEFAULT_STATUS_DIR = Path(os.getenv("BK_LIGHT_STATUS_DIR", "/tmp/hermes_agent_status"))
+DEFAULT_STATUS_DIR = Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/hermes_agent_status")
 _VALID_STATES = {"idle", "thinking", "tool_use", "permission", "success", "failed", "cancelled"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -39,7 +39,7 @@ def build_headers(api_key: str | None, session_key: str | None = None) -> dict[s
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "bk-light-agent-status-indicator/1.0",
+        "User-Agent": "moonside-agent-status/1.0",
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -166,7 +166,7 @@ def stream_run_events(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Hermes API/SSE status bridge for BK-Light")
+    parser = argparse.ArgumentParser(description="Hermes API/SSE status bridge for the Moonside status lamp")
     sub = parser.add_subparsers(dest="command", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
@@ -225,3 +225,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

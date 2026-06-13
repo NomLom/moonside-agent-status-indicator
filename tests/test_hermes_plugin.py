@@ -12,12 +12,13 @@ class HermesPluginStateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        os.environ["BK_LIGHT_STATUS_DIR"] = self.tmp.name
+        os.environ["AGENT_STATUS_DIR"] = self.tmp.name
         hp._SESSION_STATE.clear()
         hp._THREAD_TO_SESSION.clear()
         hp._TASK_TO_SESSION.clear()
 
     def tearDown(self) -> None:
+        os.environ.pop("AGENT_STATUS_DIR", None)
         os.environ.pop("BK_LIGHT_STATUS_DIR", None)
         hp._SESSION_STATE.clear()
         hp._THREAD_TO_SESSION.clear()
@@ -88,3 +89,4 @@ class HermesPluginStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

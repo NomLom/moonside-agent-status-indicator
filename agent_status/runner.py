@@ -229,7 +229,7 @@ async def run(config: AgentStatusConfig, verbose: bool = False) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Hermes Agent status indicator for BK-Light panel",
+        description="Hermes Agent status indicator for a Moonside lamp or BK-Light panel",
     )
     parser.add_argument(
         "--config", type=Path, default=None,
@@ -259,3 +259,4 @@ def main() -> None:
         sys.exit(1)
 
     asyncio.run(run(config, verbose=args.verbose))
+
