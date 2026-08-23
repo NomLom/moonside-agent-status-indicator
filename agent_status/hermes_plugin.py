@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_STATUS_DIR = Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/hermes_agent_status")
+DEFAULT_STATUS_DIR = Path(os.getenv("CLAUDE_CODE_STATUS_DIR") or os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/claude_code_status")
 _VALID_STATES = {"idle", "thinking", "tool_use", "permission"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _LOCK = threading.RLock()

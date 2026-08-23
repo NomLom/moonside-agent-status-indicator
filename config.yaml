@@ -10,8 +10,8 @@ panels:
   tile_width: 32
   tile_height: 32
 
-agent_status:
-  status_dir: "/tmp/hermes_agent_status"
+claude_status:
+  status_dir: "/tmp/claude_code_status"
   stale_threshold: 3600
   # emoji_font: "/path/to/your/emoji-font.ttf"  # auto-detected if not set
   statuses:

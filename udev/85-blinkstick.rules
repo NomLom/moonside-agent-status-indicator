@@ -1,0 +1,2 @@
+# BlinkStick USB LED: allow locally logged-in plugdev users.
+SUBSYSTEM=="usb", ATTR{idVendor}=="20a0", ATTR{idProduct}=="41e5", GROUP="plugdev", MODE="0660"

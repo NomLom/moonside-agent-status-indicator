@@ -11,7 +11,7 @@ if str(_SUBMODULE) not in sys.path:
     sys.path.insert(0, str(_SUBMODULE))
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
-_DEFAULT_STATUS_DIR = "/tmp/hermes_agent_status"
+_DEFAULT_STATUS_DIR = "/tmp/claude_code_status"
 _PLACEHOLDER_ADDRESSES = {None, "", "YOUR-BLE-DEVICE-ADDRESS"}
 
 _DEFAULT_STATUSES: dict[str, str] = {

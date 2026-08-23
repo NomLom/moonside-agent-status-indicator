@@ -14,7 +14,7 @@ from typing import Any
 
 DEFAULT_BASE_URL = os.getenv("HERMES_API_BASE_URL", "http://127.0.0.1:8642")
 DEFAULT_API_KEY = os.getenv("HERMES_API_KEY", "")
-DEFAULT_STATUS_DIR = Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/hermes_agent_status")
+DEFAULT_STATUS_DIR = Path(os.getenv("CLAUDE_CODE_STATUS_DIR") or os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or "/tmp/claude_code_status")
 _VALID_STATES = {"idle", "thinking", "tool_use", "permission", "success", "failed", "cancelled"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
