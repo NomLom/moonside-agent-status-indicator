@@ -100,6 +100,9 @@ The BlinkStick renderer consumes the same normalized state files as the Moonside
 Default mapping:
 - `thinking` and `tool_use` -> blue (`0, 0, 255`)
 - `permission` -> a two-tone purple pulse (`214, 0, 255` / `120, 0, 117`)
+- `success` -> muted green (`0, 100, 30`)
+- `failed` -> dark red (`130, 0, 0`)
+- `cancelled` -> off
 - `idle` -> dim amber (`120, 55, 0`)
 - 60 minutes of continuous idle -> off
 

@@ -42,6 +42,18 @@ class BlinkStickStatusTests(unittest.TestCase):
     def test_idle_is_dim_amber(self) -> None:
         self.assertEqual(blinkstick_status.colour_for("idle"), (120, 55, 0))
 
+    def test_terminal_states_have_explicit_colours(self) -> None:
+        self.assertEqual(blinkstick_status.colour_for("success"), (0, 100, 30))
+        self.assertEqual(blinkstick_status.colour_for("failed"), (130, 0, 0))
+        self.assertEqual(blinkstick_status.colour_for("cancelled"), (0, 0, 0))
+
+    def test_active_work_beats_terminal_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "completed").write_text("success", encoding="utf-8")
+            (root / "working").write_text("thinking", encoding="utf-8")
+            self.assertEqual(blinkstick_status.effective_state(root), "thinking")
+
 
 if __name__ == "__main__":
     unittest.main()

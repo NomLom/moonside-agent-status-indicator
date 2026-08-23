@@ -20,12 +20,24 @@ setattr(collections, "Callable", collections.abc.Callable)
 from blinkstick import blinkstick
 
 LOG = logging.getLogger("blinkstick-status")
-VALID_STATES = {"idle", "thinking", "tool_use", "permission"}
-STATE_PRIORITY = {"permission": 3, "thinking": 2, "tool_use": 2, "idle": 1}
+VALID_STATES = {"idle", "thinking", "tool_use", "permission", "success", "failed", "cancelled"}
+# Active work/attention always beats a terminal state from another session.
+STATE_PRIORITY = {
+    "permission": 5,
+    "thinking": 4,
+    "tool_use": 4,
+    "failed": 3,
+    "success": 2,
+    "cancelled": 2,
+    "idle": 1,
+}
 COLOURS = {
     "idle": (120, 55, 0),          # dim amber
     "thinking": (0, 0, 255),       # blue
     "permission": (214, 0, 255),   # vivid purple
+    "success": (0, 100, 30),       # muted green
+    "failed": (130, 0, 0),         # dark red
+    "cancelled": (0, 0, 0),        # off
     "off": (0, 0, 0),
 }
 
