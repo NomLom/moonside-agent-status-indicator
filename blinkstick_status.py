@@ -11,6 +11,7 @@ import argparse
 import collections
 import collections.abc
 import logging
+import random
 import signal
 import time
 from pathlib import Path
@@ -64,6 +65,79 @@ def walk_colours(pos: float, count: int) -> list[tuple[int, int, int]]:
     return colours
 
 
+# Random-pulse "thinking" animation: 2-3 LEDs at a time breathe up, hold for
+# a random beat, then fade out and respawn elsewhere.  A short cooldown keeps
+# a just-dead LED from reflickering in place (the strobe trap).
+PULSE_FRAME_SECONDS = 1 / 30
+PULSE_MIN_ACTIVE = 2
+PULSE_MAX_ACTIVE = 3
+PULSE_THIRD_CHANCE = 0.04          # per-frame odds of a 3rd pulse => ~2.5 avg
+PULSE_IN_SECONDS = 0.18
+PULSE_OUT_SECONDS = 0.28
+PULSE_HOLD_MIN = 0.10
+PULSE_HOLD_MAX = 0.50
+PULSE_COOLDOWN = 0.25
+
+
+def _smoothstep(x: float) -> float:
+    x = min(max(x, 0.0), 1.0)
+    return x * x * (3.0 - 2.0 * x)
+
+
+class Pulse:
+    """One LED's breathe-up / hold / fade-out schedule."""
+
+    __slots__ = ("led", "t0", "t1", "t2", "t3", "peak")
+
+    def __init__(self, led: int, t0: float, t1: float, t2: float, t3: float,
+                 peak: float) -> None:
+        self.led, self.t0, self.t1, self.t2, self.t3, self.peak = led, t0, t1, t2, t3, peak
+
+
+class PulseEngine:
+    """Stateful random-pulse painter; frame(now) returns the strip colours."""
+
+    def __init__(self, count: int, rng: random.Random | None = None) -> None:
+        self.count = max(count, 1)
+        self.rng = rng or random.Random()
+        self.pulses: dict[int, Pulse] = {}
+        self.cooldowns: dict[int, float] = {}
+
+    def _level(self, p: Pulse, now: float) -> int:
+        if now < p.t1:
+            frac = _smoothstep((now - p.t0) / (p.t1 - p.t0))
+        elif now < p.t2:
+            frac = 1.0
+        else:
+            frac = 1.0 - _smoothstep((now - p.t2) / (p.t3 - p.t2))
+        return int(CHASE_BASE + (p.peak - CHASE_BASE) * frac)
+
+    def _spawn(self, now: float) -> None:
+        free = [i for i in range(self.count)
+                if i not in self.pulses and now - self.cooldowns.get(i, -1.0) > PULSE_COOLDOWN]
+        if not free:
+            return
+        led = self.rng.choice(free)
+        t1 = now + PULSE_IN_SECONDS
+        t2 = t1 + self.rng.uniform(PULSE_HOLD_MIN, PULSE_HOLD_MAX)
+        t3 = t2 + PULSE_OUT_SECONDS
+        self.pulses[led] = Pulse(led, now, t1, t2, t3,
+                                 self.rng.uniform(0.75, 1.0) * CHASE_MAX)
+
+    def frame(self, now: float) -> list[tuple[int, int, int]]:
+        for led in [l for l, p in self.pulses.items() if now >= p.t3]:
+            del self.pulses[led]
+            self.cooldowns[led] = now
+        for _ in range(max(0, PULSE_MIN_ACTIVE - len(self.pulses))):
+            self._spawn(now)
+        if len(self.pulses) < PULSE_MAX_ACTIVE and self.rng.random() < PULSE_THIRD_CHANCE:
+            self._spawn(now)
+        levels = [CHASE_BASE] * self.count
+        for p in self.pulses.values():
+            levels[p.led] = max(levels[p.led], self._level(p, now))
+        return [(0, 0, level) for level in levels]
+
+
 def effective_state(status_dir: Path) -> str:
     """Return the highest-priority valid state across active session files."""
     best = "idle"
@@ -100,7 +174,7 @@ def set_led(stick, index: int, colour: tuple[int, int, int]) -> None:
 
 
 def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: float,
-        led_count: int = 8) -> None:
+        led_count: int = 8, animation: str = "walk") -> None:
     """Watch state files until interrupted, retrying USB discovery on errors."""
     stick = None
     displayed: list[tuple[int, int, int]] | None = None
@@ -109,6 +183,7 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
     permission_phase = False
     next_permission_pulse = 0.0
     walk_pos: float | None = None
+    pulse_engine: PulseEngine | None = None
     keep_running = True
 
     def stop(_signal, _frame) -> None:
@@ -129,11 +204,16 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
         if state == "idle" and now - last_non_idle >= idle_timeout:
             target: list[tuple[int, int, int]] = [COLOURS["off"]] * led_count
         elif state in ANIMATED_STATES:
-            if not isinstance(displayed, list) or walk_pos is None:
-                walk_pos = 0.0
+            if animation == "pulse":
+                if pulse_engine is None:
+                    pulse_engine = PulseEngine(led_count)
+                target = pulse_engine.frame(now)
             else:
-                walk_pos = (walk_pos + led_count * CHASE_FRAME_SECONDS / CHASE_CYCLE_SECONDS) % led_count
-            target = walk_colours(walk_pos, led_count)
+                if walk_pos is None:
+                    walk_pos = 0.0
+                else:
+                    walk_pos = (walk_pos + led_count * CHASE_FRAME_SECONDS / CHASE_CYCLE_SECONDS) % led_count
+                target = walk_colours(walk_pos, led_count)
         else:
             if state == "permission" and now >= next_permission_pulse:
                 permission_phase = not permission_phase
@@ -141,6 +221,7 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
             target = [COLOURS["off"]] * led_count
             target[0] = colour_for(state, permission_phase)
             walk_pos = None
+            pulse_engine = None
 
         if target != displayed:
             try:
@@ -161,7 +242,10 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
                 LOG.warning("BlinkStick write failed: %s", exc)
                 stick = None
                 displayed = None
-        time.sleep(CHASE_FRAME_SECONDS if state in ANIMATED_STATES else poll_interval)
+        if state in ANIMATED_STATES:
+            time.sleep(PULSE_FRAME_SECONDS if animation == "pulse" else CHASE_FRAME_SECONDS)
+        else:
+            time.sleep(poll_interval)
 
 
 def main() -> None:
@@ -169,7 +253,9 @@ def main() -> None:
     parser.add_argument("--status-dir", type=Path, default=Path("/tmp/claude_code_status"))
     parser.add_argument("--led-index", type=int, default=0)
     parser.add_argument("--led-count", type=int, default=8,
-                        help="number of LEDs the chase sweeps (default 8)")
+                        help="number of LEDs the animation sweeps (default 8)")
+    parser.add_argument("--animation", choices=("walk", "pulse"), default="pulse",
+                        help="working-state animation: gliding blob or random pulses (default pulse)")
     parser.add_argument("--idle-timeout-seconds", type=float, default=3600)
     parser.add_argument("--poll-seconds", type=float, default=0.2)
     parser.add_argument("--once", action="store_true", help="apply the current state once, then exit")
@@ -194,7 +280,7 @@ def main() -> None:
         print(f"state={state} led_index={args.led_index} led_count={args.led_count}")
         return
     run(args.status_dir, args.led_index, args.idle_timeout_seconds, args.poll_seconds,
-        args.led_count)
+        args.led_count, args.animation)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ Description=BlinkStick LED 0 status indicator
 
 [Service]
 Type=simple
-ExecStart=@PYTHON@ @REPO_ROOT@/blinkstick_status.py --status-dir @STATUS_DIR@ --led-index @LED_INDEX@ --idle-timeout-seconds @IDLE_TIMEOUT_SECONDS@
+ExecStart=@PYTHON@ @REPO_ROOT@/blinkstick_status.py --status-dir @STATUS_DIR@ --led-index @LED_INDEX@ --idle-timeout-seconds @IDLE_TIMEOUT_SECONDS@ --animation @ANIMATION@
 Restart=always
 RestartSec=3
 

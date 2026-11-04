@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -76,6 +77,49 @@ class BlinkStickStatusTests(unittest.TestCase):
     def test_thinking_and_tool_use_are_animated(self) -> None:
         self.assertEqual(blinkstick_status.ANIMATED_STATES, {"thinking", "tool_use"})
         self.assertNotIn("permission", blinkstick_status.ANIMATED_STATES)
+
+    def test_pulse_levels_stay_in_band(self) -> None:
+        engine = blinkstick_status.PulseEngine(8, rng=random.Random(42))
+        for step in range(3000):                     # ~100 s at 30 fps
+            for colour in engine.frame(step / 30.0):
+                self.assertGreaterEqual(colour[2], blinkstick_status.CHASE_BASE)
+                self.assertLessEqual(colour[2], blinkstick_status.CHASE_MAX)
+
+    def test_pulse_keeps_two_to_three_active(self) -> None:
+        engine = blinkstick_status.PulseEngine(8, rng=random.Random(7))
+        counts = []
+        for step in range(1, 3000):
+            engine.frame(step / 30.0)
+            counts.append(len(engine.pulses))
+        self.assertTrue(all(2 <= c <= blinkstick_status.PULSE_MAX_ACTIVE for c in counts))
+        self.assertGreater(sum(counts) / len(counts), 2.0)   # third LED visits
+
+    def test_pulse_fades_in_holds_and_fades_out(self) -> None:
+        engine = blinkstick_status.PulseEngine(8, rng=random.Random(1))
+        pulse = blinkstick_status.Pulse(3, 0.0, 0.18, 0.5, 0.78, blinkstick_status.CHASE_MAX)
+        engine.pulses = {3: pulse}
+        head = engine.frame(0.0)[3][2]
+        peak = engine.frame(0.18)[3][2]
+        hold = engine.frame(0.4)[3][2]
+        mid_fade = engine.frame(0.6)[3][2]
+        self.assertLess(head, blinkstick_status.CHASE_MAX // 3)
+        self.assertEqual(peak, blinkstick_status.CHASE_MAX)
+        self.assertEqual(hold, blinkstick_status.CHASE_MAX)
+        self.assertLess(mid_fade, peak)
+        self.assertGreater(mid_fade, blinkstick_status.CHASE_BASE)
+
+    def test_dead_pulse_cools_down_before_relighting(self) -> None:
+        engine = blinkstick_status.PulseEngine(8, rng=random.Random(3))
+        pulse = blinkstick_status.Pulse(3, 0.0, 0.1, 0.2, 0.3, 100.0)
+        engine.pulses = {3: pulse}
+        engine.frame(0.35)                                     # retires LED 3
+        self.assertNotIn(3, engine.pulses)
+        self.assertIn(3, engine.cooldowns)
+        rng = random.Random(9)
+        for _ in range(50):                                    # next ~0.2 s of frames
+            engine.frame(0.35 + rng.uniform(0.0, 0.2))
+            if 3 in engine.pulses:
+                self.fail("LED 3 relit inside its cooldown window")
 
 
 if __name__ == "__main__":

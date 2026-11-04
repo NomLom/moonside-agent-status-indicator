@@ -13,6 +13,7 @@ def main() -> None:
     parser.add_argument("--status-dir", default="/tmp/claude_code_status")
     parser.add_argument("--led-index", type=int, default=0)
     parser.add_argument("--idle-timeout-seconds", type=int, default=3600)
+    parser.add_argument("--animation", choices=("walk", "pulse"), default="pulse")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.led_index < 0 or args.idle_timeout_seconds < 0:
@@ -30,6 +31,7 @@ def main() -> None:
         "@STATUS_DIR@": shlex.quote(args.status_dir),
         "@LED_INDEX@": str(args.led_index),
         "@IDLE_TIMEOUT_SECONDS@": str(args.idle_timeout_seconds),
+        "@ANIMATION@": args.animation,
     }
     unit = template.read_text(encoding="utf-8")
     for old, new in replacements.items():
