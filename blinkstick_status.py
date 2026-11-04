@@ -40,6 +40,18 @@ COLOURS = {
     "cancelled": (0, 0, 0),        # off
     "off": (0, 0, 0),
 }
+# Working states animate: a blue comet circles the whole strip.
+ANIMATED_STATES = {"thinking", "tool_use"}
+CHASE_FRAME_SECONDS = 0.09
+CHASE_TAIL = (1.0, 0.45, 0.18)     # brightness fractions: head then dimming trail
+
+
+def chase_colours(pos: int, count: int) -> list[tuple[int, int, int]]:
+    """Return per-LED colours for one chase frame: blue head at pos, fading tail."""
+    colours = [COLOURS["off"]] * count
+    for offset, fraction in enumerate(CHASE_TAIL):
+        colours[(pos - offset) % count] = (0, 0, int(255 * fraction))
+    return colours
 
 
 def effective_state(status_dir: Path) -> str:
@@ -77,13 +89,16 @@ def set_led(stick, index: int, colour: tuple[int, int, int]) -> None:
     stick.set_color(index=index, red=colour[0], green=colour[1], blue=colour[2])
 
 
-def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: float) -> None:
+def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: float,
+        led_count: int = 8) -> None:
     """Watch state files until interrupted, retrying USB discovery on errors."""
     stick = None
-    displayed: tuple[int, int, int] | None = None
+    displayed: list[tuple[int, int, int]] | None = None
+    displayed_state: str | None = None
     last_non_idle = time.monotonic()
     permission_phase = False
     next_permission_pulse = 0.0
+    chase_pos = -1
     keep_running = True
 
     def stop(_signal, _frame) -> None:
@@ -92,7 +107,8 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
 
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    LOG.info("watching %s; reserved LED index %d; idle timeout %.0fs", status_dir, led_index, idle_timeout)
+    LOG.info("watching %s; LEDs %d-%d; idle timeout %.0fs",
+             status_dir, led_index, led_index + led_count - 1, idle_timeout)
 
     while keep_running:
         state = effective_state(status_dir)
@@ -101,12 +117,16 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
             last_non_idle = now
 
         if state == "idle" and now - last_non_idle >= idle_timeout:
-            target = COLOURS["off"]
+            target: list[tuple[int, int, int]] = [COLOURS["off"]] * led_count
+        elif state in ANIMATED_STATES:
+            chase_pos = (chase_pos + 1) % led_count
+            target = chase_colours(chase_pos, led_count)
         else:
             if state == "permission" and now >= next_permission_pulse:
                 permission_phase = not permission_phase
                 next_permission_pulse = now + 0.65
-            target = colour_for(state, permission_phase)
+            target = [COLOURS["off"]] * led_count
+            target[0] = colour_for(state, permission_phase)
 
         if target != displayed:
             try:
@@ -115,19 +135,25 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
                     if stick is None:
                         raise RuntimeError("no BlinkStick detected")
                     LOG.info("connected %s", stick.get_serial())
-                set_led(stick, led_index, target)
+                for offset, colour in enumerate(target):
+                    set_led(stick, led_index + offset, colour)
                 displayed = target
-                LOG.info("state=%s rgb=%s", state if target != COLOURS["off"] else "off", target)
+                if state != displayed_state:
+                    LOG.info("state=%s", state)
+                    displayed_state = state
             except Exception as exc:
                 LOG.warning("BlinkStick write failed: %s", exc)
                 stick = None
-        time.sleep(poll_interval)
+                displayed = None
+        time.sleep(CHASE_FRAME_SECONDS if state in ANIMATED_STATES else poll_interval)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="BlinkStick status-file renderer")
     parser.add_argument("--status-dir", type=Path, default=Path("/tmp/claude_code_status"))
     parser.add_argument("--led-index", type=int, default=0)
+    parser.add_argument("--led-count", type=int, default=8,
+                        help="number of LEDs the chase sweeps (default 8)")
     parser.add_argument("--idle-timeout-seconds", type=float, default=3600)
     parser.add_argument("--poll-seconds", type=float, default=0.2)
     parser.add_argument("--once", action="store_true", help="apply the current state once, then exit")
@@ -135,16 +161,24 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     if args.led_index < 0:
         parser.error("--led-index must be zero or greater")
+    if args.led_count < 1:
+        parser.error("--led-count must be at least 1")
     if args.once:
         state = effective_state(args.status_dir)
         stick = blinkstick.find_first()
         if stick is None:
             raise SystemExit("No BlinkStick detected")
-        target = colour_for(state)
-        set_led(stick, args.led_index, target)
-        print(f"state={state} led_index={args.led_index} rgb={target}")
+        if state in ANIMATED_STATES:
+            target = chase_colours(0, args.led_count)
+        else:
+            target = [COLOURS["off"]] * args.led_count
+            target[0] = colour_for(state)
+        for offset, colour in enumerate(target):
+            set_led(stick, args.led_index + offset, colour)
+        print(f"state={state} led_index={args.led_index} led_count={args.led_count}")
         return
-    run(args.status_dir, args.led_index, args.idle_timeout_seconds, args.poll_seconds)
+    run(args.status_dir, args.led_index, args.idle_timeout_seconds, args.poll_seconds,
+        args.led_count)
 
 
 if __name__ == "__main__":
