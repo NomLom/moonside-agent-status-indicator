@@ -54,18 +54,24 @@ class BlinkStickStatusTests(unittest.TestCase):
             (root / "working").write_text("thinking", encoding="utf-8")
             self.assertEqual(blinkstick_status.effective_state(root), "thinking")
 
-    def test_chase_frame_is_head_plus_one_partner(self) -> None:
-        frame = blinkstick_status.chase_colours(3, 8)
+    def test_walk_frame_is_smooth_symmetric_blob(self) -> None:
+        frame = blinkstick_status.walk_colours(3, 8)
         self.assertEqual(len(frame), 8)
-        self.assertEqual(frame[3], (0, 0, 255))                      # head
-        self.assertEqual(frame[2], (0, 0, 127))                      # walking partner
-        self.assertEqual([led for i, led in enumerate(frame) if i not in (2, 3)],
-                         [(0, 0, 0)] * 6)
+        self.assertEqual([c[2] for c in frame],
+                         [10, 10, 61, 165, 61, 10, 10, 10])  # ramp, never hard off
+        self.assertTrue(all(c[0] == 0 and c[1] == 0 for c in frame))
 
-    def test_chase_frame_wraps_around_the_strip(self) -> None:
-        frame = blinkstick_status.chase_colours(0, 8)
-        self.assertEqual(frame[0], (0, 0, 255))
-        self.assertEqual(frame[7], (0, 0, 127))
+    def test_walk_frame_wraps_around_the_strip(self) -> None:
+        frame = blinkstick_status.walk_colours(0, 8)
+        self.assertEqual(frame[0][2], 165)
+        self.assertEqual(frame[7][2], 61)   # partner ramps in across the seam
+        self.assertEqual(frame[1][2], 61)
+
+    def test_walk_never_exceeds_peak_or_drops_below_base(self) -> None:
+        for step in range(160):             # fractional positions across a full lap
+            for colour in blinkstick_status.walk_colours(step / 20.0, 8):
+                self.assertLessEqual(colour[2], blinkstick_status.CHASE_MAX)
+                self.assertGreaterEqual(colour[2], blinkstick_status.CHASE_BASE)
 
     def test_thinking_and_tool_use_are_animated(self) -> None:
         self.assertEqual(blinkstick_status.ANIMATED_STATES, {"thinking", "tool_use"})

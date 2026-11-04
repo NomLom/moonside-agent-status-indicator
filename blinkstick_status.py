@@ -40,18 +40,27 @@ COLOURS = {
     "cancelled": (0, 0, 0),        # off
     "off": (0, 0, 0),
 }
-# Working states animate: a two-LED blue "walk" paces around the strip —
-# head plus one dimmed neighbour always lit, so it reads as motion, not strobe.
+# Working states animate: a soft blue blob glides smoothly around the strip.
+# Fractional head position + per-LED interpolation kills the strobe effect:
+# each LED ramps up/down instead of snapping on and off, and a faint base
+# glow means no LED ever goes fully dark mid-lap.
 ANIMATED_STATES = {"thinking", "tool_use"}
-CHASE_FRAME_SECONDS = 0.11
-CHASE_TAIL = (1.0, 0.5)            # head + one walking partner, never more
+CHASE_FRAME_SECONDS = 0.05         # 20 fps paint for smooth motion
+CHASE_CYCLE_SECONDS = 1.6          # one full lap of the strip
+CHASE_MAX = 165                    # head peak (dimmed from 255 to cut flash)
+CHASE_BASE = 10                    # faint always-on glow, all LEDs
+CHASE_SPAN = 1.5                   # LED distance over which brightness ramps down
 
 
-def chase_colours(pos: int, count: int) -> list[tuple[int, int, int]]:
-    """Return per-LED colours for one walk frame: blue head at pos, dim partner behind."""
-    colours = [COLOURS["off"]] * count
-    for offset, fraction in enumerate(CHASE_TAIL):
-        colours[(pos - offset) % max(count, 1)] = (0, 0, int(255 * fraction))
+def walk_colours(pos: float, count: int) -> list[tuple[int, int, int]]:
+    """Per-LED colours for one frame: smooth blob centred on fractional head pos."""
+    count = max(count, 1)
+    colours = []
+    for i in range(count):
+        d = abs(pos - i)
+        d = min(d, count - d)      # circular distance from the head
+        ramp = max(0.0, 1.0 - d / CHASE_SPAN)
+        colours.append((0, 0, int(CHASE_BASE + (CHASE_MAX - CHASE_BASE) * ramp)))
     return colours
 
 
@@ -99,7 +108,7 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
     last_non_idle = time.monotonic()
     permission_phase = False
     next_permission_pulse = 0.0
-    chase_pos = -1
+    walk_pos: float | None = None
     keep_running = True
 
     def stop(_signal, _frame) -> None:
@@ -120,14 +129,18 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
         if state == "idle" and now - last_non_idle >= idle_timeout:
             target: list[tuple[int, int, int]] = [COLOURS["off"]] * led_count
         elif state in ANIMATED_STATES:
-            chase_pos = (chase_pos + 1) % led_count
-            target = chase_colours(chase_pos, led_count)
+            if not isinstance(displayed, list) or walk_pos is None:
+                walk_pos = 0.0
+            else:
+                walk_pos = (walk_pos + led_count * CHASE_FRAME_SECONDS / CHASE_CYCLE_SECONDS) % led_count
+            target = walk_colours(walk_pos, led_count)
         else:
             if state == "permission" and now >= next_permission_pulse:
                 permission_phase = not permission_phase
                 next_permission_pulse = now + 0.65
             target = [COLOURS["off"]] * led_count
             target[0] = colour_for(state, permission_phase)
+            walk_pos = None
 
         if target != displayed:
             try:
@@ -137,6 +150,8 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
                         raise RuntimeError("no BlinkStick detected")
                     LOG.info("connected %s", stick.get_serial())
                 for offset, colour in enumerate(target):
+                    if displayed is not None and displayed[offset] == colour:
+                        continue  # only push LEDs whose level changed
                     set_led(stick, led_index + offset, colour)
                 displayed = target
                 if state != displayed_state:
@@ -170,7 +185,7 @@ def main() -> None:
         if stick is None:
             raise SystemExit("No BlinkStick detected")
         if state in ANIMATED_STATES:
-            target = chase_colours(0, args.led_count)
+            target = walk_colours(0.5, args.led_count)
         else:
             target = [COLOURS["off"]] * args.led_count
             target[0] = colour_for(state)
