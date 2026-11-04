@@ -49,8 +49,9 @@ ANIMATED_STATES = {"thinking", "tool_use"}
 CHASE_FRAME_SECONDS = 0.05         # 20 fps paint for smooth motion
 CHASE_CYCLE_SECONDS = 1.6          # one full lap of the strip
 CHASE_MAX = 165                    # head peak (dimmed from 255 to cut flash)
-CHASE_BASE = 10                    # faint always-on glow, all LEDs
+CHASE_BASE = 22                    # passive glow floor — always visible, never black
 CHASE_SPAN = 1.5                   # LED distance over which brightness ramps down
+STATE_SETTLE_SECONDS = 0.3         # ignore state blips shorter than this
 
 
 def walk_colours(pos: float, count: int) -> list[tuple[int, int, int]]:
@@ -82,6 +83,27 @@ PULSE_COOLDOWN = 0.25
 def _smoothstep(x: float) -> float:
     x = min(max(x, 0.0), 1.0)
     return x * x * (3.0 - 2.0 * x)
+
+
+class StateStabiliser:
+    """Suppress transient states: a new state must persist SETTLE seconds
+    before it may repaint the strip.  Session files get rewritten constantly,
+    and each accepted blip would otherwise flash the whole strip."""
+
+    def __init__(self, settle_seconds: float, initial: str = "idle") -> None:
+        self.settle_seconds = settle_seconds
+        self.stable = initial
+        self.pending: str | None = None
+        self.pending_since = 0.0
+
+    def update(self, raw: str, now: float) -> str:
+        if raw == self.stable:
+            self.pending = None
+        elif raw != self.pending:
+            self.pending, self.pending_since = raw, now
+        elif now - self.pending_since >= self.settle_seconds:
+            self.stable, self.pending = raw, None
+        return self.stable
 
 
 class Pulse:
@@ -183,7 +205,8 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
     permission_phase = False
     next_permission_pulse = 0.0
     walk_pos: float | None = None
-    pulse_engine: PulseEngine | None = None
+    pulse_engine = PulseEngine(led_count)
+    stabiliser = StateStabiliser(STATE_SETTLE_SECONDS)
     keep_running = True
 
     def stop(_signal, _frame) -> None:
@@ -196,8 +219,8 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
              status_dir, led_index, led_index + led_count - 1, idle_timeout)
 
     while keep_running:
-        state = effective_state(status_dir)
         now = time.monotonic()
+        state = stabiliser.update(effective_state(status_dir), now)
         if state != "idle":
             last_non_idle = now
 
@@ -205,8 +228,6 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
             target: list[tuple[int, int, int]] = [COLOURS["off"]] * led_count
         elif state in ANIMATED_STATES:
             if animation == "pulse":
-                if pulse_engine is None:
-                    pulse_engine = PulseEngine(led_count)
                 target = pulse_engine.frame(now)
             else:
                 if walk_pos is None:
@@ -221,7 +242,6 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
             target = [COLOURS["off"]] * led_count
             target[0] = colour_for(state, permission_phase)
             walk_pos = None
-            pulse_engine = None
 
         if target != displayed:
             try:

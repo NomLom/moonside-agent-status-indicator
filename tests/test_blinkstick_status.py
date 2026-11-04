@@ -59,14 +59,14 @@ class BlinkStickStatusTests(unittest.TestCase):
         frame = blinkstick_status.walk_colours(3, 8)
         self.assertEqual(len(frame), 8)
         self.assertEqual([c[2] for c in frame],
-                         [10, 10, 61, 165, 61, 10, 10, 10])  # ramp, never hard off
+                         [22, 22, 69, 165, 69, 22, 22, 22])  # ramp, never hard off
         self.assertTrue(all(c[0] == 0 and c[1] == 0 for c in frame))
 
     def test_walk_frame_wraps_around_the_strip(self) -> None:
         frame = blinkstick_status.walk_colours(0, 8)
         self.assertEqual(frame[0][2], 165)
-        self.assertEqual(frame[7][2], 61)   # partner ramps in across the seam
-        self.assertEqual(frame[1][2], 61)
+        self.assertEqual(frame[7][2], 69)   # partner ramps in across the seam
+        self.assertEqual(frame[1][2], 69)
 
     def test_walk_never_exceeds_peak_or_drops_below_base(self) -> None:
         for step in range(160):             # fractional positions across a full lap
@@ -120,6 +120,25 @@ class BlinkStickStatusTests(unittest.TestCase):
             engine.frame(0.35 + rng.uniform(0.0, 0.2))
             if 3 in engine.pulses:
                 self.fail("LED 3 relit inside its cooldown window")
+
+    def test_stabiliser_ignores_short_blips(self) -> None:
+        stab = blinkstick_status.StateStabiliser(0.3)
+        self.assertEqual(stab.update("thinking", 1.0), "idle")     # blip starts
+        self.assertEqual(stab.update("thinking", 1.15), "idle")    # < 0.3 s
+        self.assertEqual(stab.update("idle", 1.25), "idle")        # blip ends
+        self.assertEqual(stab.update("idle", 2.0), "idle")         # never promoted
+
+    def test_stabiliser_accepts_sustained_state(self) -> None:
+        stab = blinkstick_status.StateStabiliser(0.3)
+        stab.update("thinking", 1.0)
+        self.assertEqual(stab.update("thinking", 1.35), "thinking")
+
+    def test_stabiliser_holds_animation_through_idle_flicker(self) -> None:
+        stab = blinkstick_status.StateStabiliser(0.3)
+        stab.update("thinking", 1.0)
+        stab.update("thinking", 1.4)                               # stable now
+        self.assertEqual(stab.update("idle", 2.0), "thinking")     # rewrite blip
+        self.assertEqual(stab.update("thinking", 2.1), "thinking") # recovered
 
 
 if __name__ == "__main__":
