@@ -40,17 +40,18 @@ COLOURS = {
     "cancelled": (0, 0, 0),        # off
     "off": (0, 0, 0),
 }
-# Working states animate: a blue comet circles the whole strip.
+# Working states animate: a two-LED blue "walk" paces around the strip —
+# head plus one dimmed neighbour always lit, so it reads as motion, not strobe.
 ANIMATED_STATES = {"thinking", "tool_use"}
-CHASE_FRAME_SECONDS = 0.09
-CHASE_TAIL = (1.0, 0.45, 0.18)     # brightness fractions: head then dimming trail
+CHASE_FRAME_SECONDS = 0.11
+CHASE_TAIL = (1.0, 0.5)            # head + one walking partner, never more
 
 
 def chase_colours(pos: int, count: int) -> list[tuple[int, int, int]]:
-    """Return per-LED colours for one chase frame: blue head at pos, fading tail."""
+    """Return per-LED colours for one walk frame: blue head at pos, dim partner behind."""
     colours = [COLOURS["off"]] * count
     for offset, fraction in enumerate(CHASE_TAIL):
-        colours[(pos - offset) % count] = (0, 0, int(255 * fraction))
+        colours[(pos - offset) % max(count, 1)] = (0, 0, int(255 * fraction))
     return colours
 
 

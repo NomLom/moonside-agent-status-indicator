@@ -54,20 +54,18 @@ class BlinkStickStatusTests(unittest.TestCase):
             (root / "working").write_text("thinking", encoding="utf-8")
             self.assertEqual(blinkstick_status.effective_state(root), "thinking")
 
-    def test_chase_frame_is_blue_head_with_fading_tail(self) -> None:
+    def test_chase_frame_is_head_plus_one_partner(self) -> None:
         frame = blinkstick_status.chase_colours(3, 8)
         self.assertEqual(len(frame), 8)
         self.assertEqual(frame[3], (0, 0, 255))                      # head
-        self.assertEqual(frame[2], (0, 0, 114))                      # mid tail
-        self.assertEqual(frame[1], (0, 0, 45))                       # dim tail
-        self.assertEqual([led for i, led in enumerate(frame) if i not in (1, 2, 3)],
-                         [(0, 0, 0)] * 5)
+        self.assertEqual(frame[2], (0, 0, 127))                      # walking partner
+        self.assertEqual([led for i, led in enumerate(frame) if i not in (2, 3)],
+                         [(0, 0, 0)] * 6)
 
     def test_chase_frame_wraps_around_the_strip(self) -> None:
         frame = blinkstick_status.chase_colours(0, 8)
         self.assertEqual(frame[0], (0, 0, 255))
-        self.assertEqual(frame[7], (0, 0, 114))
-        self.assertEqual(frame[6], (0, 0, 45))
+        self.assertEqual(frame[7], (0, 0, 127))
 
     def test_thinking_and_tool_use_are_animated(self) -> None:
         self.assertEqual(blinkstick_status.ANIMATED_STATES, {"thinking", "tool_use"})
