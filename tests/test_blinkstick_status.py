@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import random
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -139,6 +141,54 @@ class BlinkStickStatusTests(unittest.TestCase):
         stab.update("thinking", 1.4)                               # stable now
         self.assertEqual(stab.update("idle", 2.0), "thinking")     # rewrite blip
         self.assertEqual(stab.update("thinking", 2.1), "thinking") # recovered
+
+    # ---- multi-agent layer ----
+
+    def test_active_sessions_ignores_stale_dead_writers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "alive").write_text("thinking", encoding="utf-8")
+            (root / "crashed").write_text("thinking", encoding="utf-8")
+            os.utime(root / "crashed", (time.time() - 7200, time.time() - 7200))
+            (root / "napping").write_text("idle", encoding="utf-8")
+            os.utime(root / "napping", (time.time() - 7200, time.time() - 7200))
+            names = dict(blinkstick_status.active_sessions(root, max_state_age=1800))
+            self.assertEqual(names, {"alive": "thinking"})
+            self.assertEqual(blinkstick_status.effective_state(root), "thinking")
+
+    def test_led_assignment_is_stable_and_in_range(self) -> None:
+        first = blinkstick_status.led_for("session-42", 8)
+        self.assertEqual(first, blinkstick_status.led_for("session-42", 8))
+        self.assertTrue(0 <= first < 8)
+        self.assertTrue(0 <= blinkstick_status.led_for("x", 1) < 1)
+
+    def test_permission_wins_collision_with_thinking(self) -> None:
+        original = blinkstick_status.led_for
+        setattr(blinkstick_status, "led_for", lambda name, count: 0)  # force collision
+        try:
+            frame = blinkstick_status.paint_sessions(
+                [("thinker", "thinking"), ("blocked", "permission")],
+                8, {}, now=100.0, permission_phase=False)
+            self.assertEqual(frame[0], blinkstick_status.COLOURS["permission"])
+            frame_dark = blinkstick_status.paint_sessions(
+                [("thinker", "thinking"), ("blocked", "permission")],
+                8, {}, now=100.0, permission_phase=True)
+            self.assertEqual(frame_dark[0], (120, 0, 117))         # pulse half
+        finally:
+            setattr(blinkstick_status, "led_for", original)
+
+    def test_non_colliding_agents_get_own_leds(self) -> None:
+        frame = blinkstick_status.paint_sessions(
+            [("blocked", "permission")], 8, {}, now=100.0, permission_phase=False)
+        purple_leds = [i for i, c in enumerate(frame) if c == blinkstick_status.COLOURS["permission"]]
+        self.assertEqual(len(purple_leds), 1)
+        self.assertTrue(all(c == (0, 0, blinkstick_status.CHASE_BASE)
+                            for i, c in enumerate(frame) if i != purple_leds[0]))
+
+    def test_cancelled_session_paints_nothing(self) -> None:
+        frame = blinkstick_status.paint_sessions(
+            [("done", "cancelled")], 8, {}, now=100.0, permission_phase=False)
+        self.assertTrue(all(c == (0, 0, blinkstick_status.CHASE_BASE) for c in frame))
 
 
 if __name__ == "__main__":

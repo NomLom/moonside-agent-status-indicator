@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import collections
 import collections.abc
+import hashlib
 import logging
 import random
 import signal
@@ -160,14 +161,20 @@ class PulseEngine:
         return [(0, 0, level) for level in levels]
 
 
-def effective_state(status_dir: Path) -> str:
-    """Return the highest-priority valid state across active session files."""
-    best = "idle"
-    best_priority = 0
+def active_sessions(status_dir: Path, max_state_age: float = 1800.0) -> list[tuple[str, str]]:
+    """Return (session_name, state) for live sessions.
+
+    Crashed sessions leave their state file behind forever, so an active
+    (non-idle) file whose mtime is older than max_state_age is treated as a
+    dead writer and ignored.  Stale idle files are harmless: idle is the
+    baseline anyway.
+    """
+    now = time.time()
+    sessions: list[tuple[str, str]] = []
     try:
         files = list(status_dir.iterdir())
     except FileNotFoundError:
-        return best
+        return sessions
 
     for path in files:
         if not path.is_file() or path.name.startswith("."):
@@ -176,7 +183,62 @@ def effective_state(status_dir: Path) -> str:
             state = path.read_text(encoding="utf-8").strip()
         except OSError:
             continue
-        if state in VALID_STATES and STATE_PRIORITY[state] > best_priority:
+        if state not in VALID_STATES or state == "idle":
+            continue
+        try:
+            if now - path.stat().st_mtime > max_state_age:
+                continue
+        except OSError:
+            continue
+        sessions.append((path.name, state))
+    return sessions
+
+
+def led_for(session_name: str, led_count: int) -> int:
+    """Stable LED assignment: the same session always gets the same LED."""
+    digest = hashlib.sha256(session_name.encode("utf-8")).digest()
+    return digest[0] % max(led_count, 1)
+
+
+def paint_sessions(sessions: list[tuple[str, str]], led_count: int,
+                   engines: dict[int, PulseEngine], now: float,
+                   permission_phase: bool) -> list[tuple[int, int, int]]:
+    """Per-agent frame: every live session breathes on its own LED.
+
+    Collisions on one LED are resolved by state priority, so a purple
+    permission session is never overwritten by another agent's blue.
+    """
+    target: list[tuple[int, int, int]] = [(0, 0, CHASE_BASE)] * led_count
+    best_priority = [0] * led_count
+    for name, state in sessions:
+        led = led_for(name, led_count)
+        priority = STATE_PRIORITY[state]
+        if priority <= best_priority[led]:
+            continue
+        if state == "cancelled":
+            continue
+        if state in ANIMATED_STATES:
+            engine = engines.get(led)
+            if engine is None:
+                engine = PulseEngine(1, rng=random.Random(hashlib.sha256(name.encode()).digest()[0]))
+                engines[led] = engine
+            level = engine.frame(now)[0][2]
+            colour = (0, 0, max(level, CHASE_BASE))
+        elif state == "permission":
+            colour = (120, 0, 117) if permission_phase else COLOURS["permission"]
+        else:
+            colour = COLOURS[state]  # soft steady green/red
+        target[led] = colour
+        best_priority[led] = priority
+    return target
+
+
+def effective_state(status_dir: Path, max_state_age: float = 1800.0) -> str:
+    """Return the highest-priority valid state across active session files."""
+    best = "idle"
+    best_priority = 0
+    for _name, state in active_sessions(status_dir, max_state_age):
+        if STATE_PRIORITY[state] > best_priority:
             best = state
             best_priority = STATE_PRIORITY[state]
     return best
@@ -196,7 +258,7 @@ def set_led(stick, index: int, colour: tuple[int, int, int]) -> None:
 
 
 def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: float,
-        led_count: int = 8, animation: str = "walk") -> None:
+        led_count: int = 8, animation: str = "multi", max_state_age: float = 1800.0) -> None:
     """Watch state files until interrupted, retrying USB discovery on errors."""
     stick = None
     displayed: list[tuple[int, int, int]] | None = None
@@ -207,7 +269,18 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
     walk_pos: float | None = None
     pulse_engine = PulseEngine(led_count)
     stabiliser = StateStabiliser(STATE_SETTLE_SECONDS)
+    session_stabilisers: dict[str, StateStabiliser] = {}
+    agent_engines: dict[int, PulseEngine] = {}
     keep_running = True
+
+    def stable_sessions(now: float) -> list[tuple[str, str]]:
+        confirmed = []
+        for name, raw in active_sessions(status_dir, max_state_age):
+            stab = session_stabilisers.setdefault(name, StateStabiliser(STATE_SETTLE_SECONDS))
+            state = stab.update(raw, now)
+            if state != "idle" and state == raw:
+                confirmed.append((name, state))
+        return confirmed
 
     def stop(_signal, _frame) -> None:
         nonlocal keep_running
@@ -220,12 +293,24 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
 
     while keep_running:
         now = time.monotonic()
-        state = stabiliser.update(effective_state(status_dir), now)
+        if now >= next_permission_pulse:
+            permission_phase = not permission_phase
+            next_permission_pulse = now + 0.65
+
+        sessions: list[tuple[str, str]] | None = None
+        if animation == "multi":
+            sessions = stable_sessions(now)
+            state = (max(sessions, key=lambda ns: STATE_PRIORITY[ns[1]])[1]
+                     if sessions else "idle")
+        else:
+            state = stabiliser.update(effective_state(status_dir, max_state_age), now)
         if state != "idle":
             last_non_idle = now
 
         if state == "idle" and now - last_non_idle >= idle_timeout:
             target: list[tuple[int, int, int]] = [COLOURS["off"]] * led_count
+        elif animation == "multi" and sessions:
+            target = paint_sessions(sessions, led_count, agent_engines, now, permission_phase)
         elif state in ANIMATED_STATES:
             if animation == "pulse":
                 target = pulse_engine.frame(now)
@@ -236,9 +321,6 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
                     walk_pos = (walk_pos + led_count * CHASE_FRAME_SECONDS / CHASE_CYCLE_SECONDS) % led_count
                 target = walk_colours(walk_pos, led_count)
         else:
-            if state == "permission" and now >= next_permission_pulse:
-                permission_phase = not permission_phase
-                next_permission_pulse = now + 0.65
             target = [COLOURS["off"]] * led_count
             target[0] = colour_for(state, permission_phase)
             walk_pos = None
@@ -262,8 +344,8 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
                 LOG.warning("BlinkStick write failed: %s", exc)
                 stick = None
                 displayed = None
-        if state in ANIMATED_STATES:
-            time.sleep(PULSE_FRAME_SECONDS if animation == "pulse" else CHASE_FRAME_SECONDS)
+        if animation == "multi" or state in ANIMATED_STATES:
+            time.sleep(PULSE_FRAME_SECONDS if animation != "walk" else CHASE_FRAME_SECONDS)
         else:
             time.sleep(poll_interval)
 
@@ -274,10 +356,12 @@ def main() -> None:
     parser.add_argument("--led-index", type=int, default=0)
     parser.add_argument("--led-count", type=int, default=8,
                         help="number of LEDs the animation sweeps (default 8)")
-    parser.add_argument("--animation", choices=("walk", "pulse"), default="pulse",
-                        help="working-state animation: gliding blob or random pulses (default pulse)")
+    parser.add_argument("--animation", choices=("multi", "walk", "pulse"), default="multi",
+                        help="working-state animation: per-agent LEDs (multi), gliding blob, or random pulses")
     parser.add_argument("--idle-timeout-seconds", type=float, default=3600)
     parser.add_argument("--poll-seconds", type=float, default=0.2)
+    parser.add_argument("--state-max-age-seconds", type=float, default=1800.0,
+                        help="ignore active-state files not updated within this window")
     parser.add_argument("--once", action="store_true", help="apply the current state once, then exit")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")

@@ -13,7 +13,7 @@ def main() -> None:
     parser.add_argument("--status-dir", default="/tmp/claude_code_status")
     parser.add_argument("--led-index", type=int, default=0)
     parser.add_argument("--idle-timeout-seconds", type=int, default=3600)
-    parser.add_argument("--animation", choices=("walk", "pulse"), default="pulse")
+    parser.add_argument("--animation", choices=("multi", "walk", "pulse"), default="multi")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.led_index < 0 or args.idle_timeout_seconds < 0:
