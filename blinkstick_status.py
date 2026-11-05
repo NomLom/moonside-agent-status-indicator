@@ -15,6 +15,7 @@ import logging
 import random
 import signal
 import time
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # BlinkStick 1.2.0 references collections.Callable, removed in Python 3.10.
@@ -349,7 +350,8 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
                     set_led(stick, led_index + offset, colour)
                 displayed = target
                 if state != displayed_state:
-                    LOG.info("state=%s", state)
+                    LOG.info("state=%s live=%s", state,
+                             len(sessions) if sessions is not None else "-")
                     displayed_state = state
             except Exception as exc:
                 LOG.warning("BlinkStick write failed: %s", exc)
@@ -374,8 +376,16 @@ def main() -> None:
     parser.add_argument("--state-max-age-seconds", type=float, default=1800.0,
                         help="ignore active-state files not updated within this window")
     parser.add_argument("--once", action="store_true", help="apply the current state once, then exit")
+    parser.add_argument("--log-file", type=Path,
+                        default=Path.home() / ".local/share/blinkstick/status.log",
+                        help="transition diary (state changes only, rotated)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    if args.log_file:
+        args.log_file.parent.mkdir(parents=True, exist_ok=True)
+        _handler = RotatingFileHandler(args.log_file, maxBytes=256 * 1024, backupCount=2)
+        _handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
+        LOG.addHandler(_handler)
     if args.led_index < 0:
         parser.error("--led-index must be zero or greater")
     if args.led_count < 1:

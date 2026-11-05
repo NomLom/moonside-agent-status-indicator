@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,12 @@ DEFAULT_STATUS_DIR = Path(os.getenv("CLAUDE_CODE_STATUS_DIR") or os.getenv("AGEN
 _VALID_STATES = {"idle", "thinking", "tool_use", "permission"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _LOCK = threading.RLock()
+# Interrupted turns fire no closing hook, so an active state can strand on
+# disk and pin the lamp blue. The watchdog expires quiet "turn states" to
+# idle; permission is left alone because waiting on a human is legitimate.
+STUCK_TURN_SECONDS = 240
+STUCK_TOOL_SECONDS = 1800
+_TURN_STATES = {"thinking", "tool_use"}
 
 
 @dataclass
@@ -21,6 +28,8 @@ class SessionState:
 _SESSION_STATE: dict[str, SessionState] = {}
 _THREAD_TO_SESSION: dict[int, str] = {}
 _TASK_TO_SESSION: dict[str, str] = {}
+_LAST_EVENT: dict[str, float] = {}
+_LAST_WRITTEN: dict[str, str] = {}
 
 def _status_dir() -> Path:
     return Path(os.getenv("AGENT_STATUS_DIR") or os.getenv("BK_LIGHT_STATUS_DIR") or str(DEFAULT_STATUS_DIR))
@@ -49,6 +58,35 @@ def _write_state(session_id: str | None, state: str) -> None:
     if state_file is None:
         return
     state_file.write_text(state, encoding="utf-8")
+    safe = _safe_session_name(session_id)
+    if safe is not None:
+        _LAST_WRITTEN[safe] = state
+
+
+def sweep_stuck_sessions(now: float | None = None) -> list[str]:
+    """Expire active states whose session has gone silent (interrupted turns).
+
+    Returns the sessions that were reset to idle. A session mid-tool
+    (tool_depth > 0) gets the longer STUCK_TOOL_SECONDS grace, since a long
+    build emits no hook events while it runs.
+    """
+    now = time.monotonic() if now is None else now
+    reset: list[str] = []
+    with _LOCK:
+        for safe, written in list(_LAST_WRITTEN.items()):
+            if written not in _TURN_STATES:
+                continue
+            last = _LAST_EVENT.get(safe, 0.0)
+            session = _SESSION_STATE.get(safe)
+            in_tool = session is not None and session.tool_depth > 0
+            limit = STUCK_TOOL_SECONDS if in_tool else STUCK_TURN_SECONDS
+            if now - last > limit:
+                if session is not None:
+                    session.tool_depth = 0
+                    session.approval_pending = False
+                _write_state(safe, "idle")
+                reset.append(safe)
+    return reset
 
 
 def _remove_state(session_id: str | None) -> None:
@@ -56,12 +94,17 @@ def _remove_state(session_id: str | None) -> None:
     if state_file is None:
         return
     state_file.unlink(missing_ok=True)
+    safe = _safe_session_name(session_id)
+    if safe is not None:
+        _LAST_WRITTEN.pop(safe, None)
+        _LAST_EVENT.pop(safe, None)
 
 
 def _ensure_state(session_id: str | None) -> SessionState | None:
     safe = _safe_session_name(session_id)
     if safe is None:
         return None
+    _LAST_EVENT[safe] = time.monotonic()
     return _SESSION_STATE.setdefault(safe, SessionState())
 
 
@@ -237,6 +280,28 @@ def _on_session_reset(session_id: str | None = None, **kwargs) -> None:
         _remove_state(session_id)
 
 
+_WATCHDOG: threading.Thread | None = None
+
+
+def start_watchdog(interval: float = 10.0) -> None:
+    """Spawn the daemon sweep once (idempotent)."""
+    global _WATCHDOG
+    with _LOCK:
+        if _WATCHDOG is not None and _WATCHDOG.is_alive():
+            return
+
+        def loop() -> None:
+            while True:
+                time.sleep(interval)
+                try:
+                    sweep_stuck_sessions()
+                except Exception:
+                    pass  # a watchdog must never kill the gateway
+
+        _WATCHDOG = threading.Thread(target=loop, name="blinkstick-status-watchdog", daemon=True)
+        _WATCHDOG.start()
+
+
 def register(ctx) -> None:
     ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("pre_llm_call", _on_pre_llm_call)
@@ -248,4 +313,5 @@ def register(ctx) -> None:
     ctx.register_hook("on_session_end", _on_session_end)
     ctx.register_hook("on_session_finalize", _on_session_finalize)
     ctx.register_hook("on_session_reset", _on_session_reset)
+    start_watchdog()
 
