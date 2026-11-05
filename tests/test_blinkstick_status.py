@@ -190,6 +190,27 @@ class BlinkStickStatusTests(unittest.TestCase):
             [("done", "cancelled")], 8, {}, now=100.0, permission_phase=False)
         self.assertTrue(all(c == (0, 0, blinkstick_status.CHASE_BASE) for c in frame))
 
+    def test_working_agent_blue_wanders_the_strip(self) -> None:
+        engines: dict = {}
+        seen = set()
+        for step in range(1200):                      # 40 s of frames
+            frame = blinkstick_status.paint_sessions(
+                [("worker", "thinking")], 8, engines, now=step / 30.0, permission_phase=False)
+            seen.update(i for i, c in enumerate(frame) if c[2] > blinkstick_status.CHASE_BASE + 50)
+        self.assertGreaterEqual(len(seen), 5)         # genuinely roams, not parked
+
+    def test_working_agent_keeps_about_one_or_two_alive(self) -> None:
+        engines: dict = {}
+        counts = []
+        for step in range(1, 1200):
+            frame = blinkstick_status.paint_sessions(
+                [("worker", "thinking")], 8, engines, now=step / 30.0, permission_phase=False)
+            counts.append(sum(1 for c in frame if c[2] > blinkstick_status.CHASE_BASE + 50))
+        self.assertTrue(all(c <= 3 for c in counts))
+        self.assertGreater(sum(counts) / len(counts), 1.15)  # ~2 alive with fades/glow
+        # Handover frames (old breath gone, new one still rising) are rare:
+        self.assertLess(counts.count(0) / len(counts), 0.15)
+
 
 if __name__ == "__main__":
     unittest.main()

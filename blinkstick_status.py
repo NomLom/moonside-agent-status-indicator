@@ -118,11 +118,20 @@ class Pulse:
 
 
 class PulseEngine:
-    """Stateful random-pulse painter; frame(now) returns the strip colours."""
+    """Stateful random-pulse painter; frame(now) returns the strip colours.
 
-    def __init__(self, count: int, rng: random.Random | None = None) -> None:
+    min_active/max_active size how many LEDs of this engine are alive at once
+    (the fleet default is the old 2-3 feel; per-agent engines use 1-2).
+    """
+
+    def __init__(self, count: int, rng: random.Random | None = None,
+                 min_active: int = PULSE_MIN_ACTIVE, max_active: int = PULSE_MAX_ACTIVE,
+                 third_chance: float = PULSE_THIRD_CHANCE) -> None:
         self.count = max(count, 1)
         self.rng = rng or random.Random()
+        self.min_active = min_active
+        self.max_active = max_active
+        self.third_chance = third_chance
         self.pulses: dict[int, Pulse] = {}
         self.cooldowns: dict[int, float] = {}
 
@@ -151,9 +160,9 @@ class PulseEngine:
         for led in [l for l, p in self.pulses.items() if now >= p.t3]:
             del self.pulses[led]
             self.cooldowns[led] = now
-        for _ in range(max(0, PULSE_MIN_ACTIVE - len(self.pulses))):
+        for _ in range(max(0, self.min_active - len(self.pulses))):
             self._spawn(now)
-        if len(self.pulses) < PULSE_MAX_ACTIVE and self.rng.random() < PULSE_THIRD_CHANCE:
+        if len(self.pulses) < self.max_active and self.rng.random() < self.third_chance:
             self._spawn(now)
         levels = [CHASE_BASE] * self.count
         for p in self.pulses.values():
@@ -201,35 +210,37 @@ def led_for(session_name: str, led_count: int) -> int:
 
 
 def paint_sessions(sessions: list[tuple[str, str]], led_count: int,
-                   engines: dict[int, PulseEngine], now: float,
+                   engines: dict, now: float,
                    permission_phase: bool) -> list[tuple[int, int, int]]:
-    """Per-agent frame: every live session breathes on its own LED.
+    """Per-agent frame.
 
-    Collisions on one LED are resolved by state priority, so a purple
-    permission session is never overwritten by another agent's blue.
+    Working agents (thinking/tool_use) each run a private 1-2 pulse engine
+    whose breaths respawn at random LEDs, so their blue wanders the strip.
+    A permission agent is pinned at its stable LED and pulses bright purple —
+    it must be findable, not hidden in the wander — and wins any collision
+    with blue.  Terminal states sit pinned and steady in soft green/red.
     """
-    target: list[tuple[int, int, int]] = [(0, 0, CHASE_BASE)] * led_count
-    best_priority = [0] * led_count
+    blue_levels = [CHASE_BASE] * led_count
     for name, state in sessions:
-        led = led_for(name, led_count)
-        priority = STATE_PRIORITY[state]
-        if priority <= best_priority[led]:
+        if state not in ANIMATED_STATES:
             continue
+        engine = engines.get(("blue", name))
+        if engine is None:
+            seed = int.from_bytes(hashlib.sha256(name.encode()).digest()[:8], "big")
+            engine = PulseEngine(led_count, rng=random.Random(seed),
+                                 min_active=1, max_active=2, third_chance=0.15)
+            engines[("blue", name)] = engine
+        for i, colour in enumerate(engine.frame(now)):
+            blue_levels[i] = max(blue_levels[i], colour[2])
+    target: list[tuple[int, int, int]] = [(0, 0, level) for level in blue_levels]
+    for name, state in sessions:
         if state == "cancelled":
             continue
-        if state in ANIMATED_STATES:
-            engine = engines.get(led)
-            if engine is None:
-                engine = PulseEngine(1, rng=random.Random(hashlib.sha256(name.encode()).digest()[0]))
-                engines[led] = engine
-            level = engine.frame(now)[0][2]
-            colour = (0, 0, max(level, CHASE_BASE))
-        elif state == "permission":
-            colour = (120, 0, 117) if permission_phase else COLOURS["permission"]
-        else:
-            colour = COLOURS[state]  # soft steady green/red
-        target[led] = colour
-        best_priority[led] = priority
+        led = led_for(name, led_count)
+        if state == "permission":
+            target[led] = (120, 0, 117) if permission_phase else COLOURS["permission"]
+        elif state not in ANIMATED_STATES:
+            target[led] = COLOURS[state]  # soft steady green/red
     return target
 
 
@@ -270,7 +281,7 @@ def run(status_dir: Path, led_index: int, idle_timeout: float, poll_interval: fl
     pulse_engine = PulseEngine(led_count)
     stabiliser = StateStabiliser(STATE_SETTLE_SECONDS)
     session_stabilisers: dict[str, StateStabiliser] = {}
-    agent_engines: dict[int, PulseEngine] = {}
+    agent_engines: dict = {}
     keep_running = True
 
     def stable_sessions(now: float) -> list[tuple[str, str]]:
