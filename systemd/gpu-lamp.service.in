@@ -1,0 +1,12 @@
+[Unit]
+Description=Moonside O101 GPU mood lamp (nvidia-smi stream -> BLE)
+After=network-online.target bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=@PYTHON@ @REPO_ROOT@/gpu_lamp.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
