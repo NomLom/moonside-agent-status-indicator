@@ -29,6 +29,16 @@ Nordic UART service `6e400001-b5a3-f393-e0a9-e50e24dcca9e`, TX
   writer now prefers write-commands and falls back to write-requests per
   payload (`LampWriter._write_cmd`). Corollary: while the phone app is
   connected, Pi connections page-timeout — kill phone BT before Pi control.
+- EC-8 (2026-11-08, reproduced): mid-session the lamp entered a state where it
+  advertised normally but **every** connection was aborted by the local host
+  (`org.bluez.Error.Failed le-connection-abort-by-local`) within ~1s — for the
+  service and manual probes alike. Pi-side remedies that did NOT help: adapter
+  power cycle, `bluetoothctl remove` + fresh rescan, orphan-client check.
+  Resolution: **physical power cycle of the lamp** (wire switch) — its firmware
+  was believed to be holding a half-open link after an unclean central
+  disconnect (phone app). Service recovered automatically on the next retry.
+  Triage rule: link-up + `abort-by-local` + scans fine ⇒ cycle lamp power
+  first, blame the Pi second.
 
 ## Corrections to prior claims
 
