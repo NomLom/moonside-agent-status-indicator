@@ -172,6 +172,16 @@ class LampWriter:
                 if device is devices[-1]:
                     raise
 
+    async def _write_cmd(self, client, data):
+        # Post-reboot O101 (EC-7, 2026-11-08) rejects ATT write *requests*
+        # (0x8E Unlikely Error) but accepts write *commands*. Prefer the
+        # command; fall back to a request if the command path errors.
+        try:
+            await client.write_gatt_char(TX, data, response=False)
+        except BaseException:
+            await client.write_gatt_char(TX, data, response=True)
+        await asyncio.sleep(0.4)
+
     async def send(self, key):
         palette = PALETTES[key]
         try:
@@ -179,11 +189,9 @@ class LampWriter:
             client = self.client
             if client is None:
                 raise RuntimeError('writer not connected')
-            await client.write_gatt_char(TX, b'LEDON', response=True)
-            await client.write_gatt_char(
-                TX, f"BRIGH{palette['brightness']}".encode(), response=True)
-            await client.write_gatt_char(
-                TX, palette['command'].encode(), response=True)
+            await self._write_cmd(client, b'LEDON')
+            await self._write_cmd(client, f"BRIGH{palette['brightness']}".encode())
+            await self._write_cmd(client, palette['command'].encode())
         except BaseException:
             await self.close()
             raise

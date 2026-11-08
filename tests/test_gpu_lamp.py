@@ -124,5 +124,35 @@ class IOTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [('low', 'day'), ('thermal', 'day')])
 
 
+class WriteCmdTests(unittest.IsolatedAsyncioTestCase):
+    """EC-7: prefer ATT write-command, fall back to write-request per payload."""
+
+    async def _send_with(self, fail_command):
+        calls = []
+
+        class FakeClient:
+            async def write_gatt_char(self, tx, data, response):
+                if response is False and fail_command:
+                    raise RuntimeError('0x8E unlikely error')
+                calls.append((data, response))
+
+        writer = g.LampWriter.__new__(g.LampWriter)  # skip __init__/IO
+        writer.client = FakeClient()
+        writer.connect = AsyncMock()
+        writer.close = AsyncMock()
+        await writer.send(('busy', 'day'))
+        return calls
+
+    async def test_write_command_preferred(self):
+        calls = await self._send_with(fail_command=False)
+        self.assertEqual([r for _, r in calls], [False, False, False])
+        self.assertEqual(calls[0][0], b'LEDON')
+
+    async def test_falls_back_to_request_per_command(self):
+        calls = await self._send_with(fail_command=True)
+        # each payload: failed attempt not recorded, successful request recorded
+        self.assertEqual([r for _, r in calls], [True, True, True])
+
+
 if __name__ == '__main__':
     unittest.main()

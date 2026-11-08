@@ -21,6 +21,14 @@ Nordic UART service `6e400001-b5a3-f393-e0a9-e50e24dcca9e`, TX
   That timing is not a controlled test and does not establish a weak PSU, voltage
   sag, dropped CONNECT_IND, or resolution of the underlying connection problem.
 - Earlier RSSI of -69 was reported. One RSSI value does not identify a fault.
+- EC-7 (2026-11-08, reproduced): after a Pi reboot the lamp accepted scans but
+  every ATT **write request** (`response=True`) failed — first with connection
+  drops/`Unlikely Error 0x8E`, then 0x8E on `COLOR` while `LEDON`/`BRIGH` had
+  just landed. Switching to ATT **write commands** (`response=False`, 0.4 s
+  pacing) delivered all payloads; solid red was **visually confirmed**. The
+  writer now prefers write-commands and falls back to write-requests per
+  payload (`LampWriter._write_cmd`). Corollary: while the phone app is
+  connected, Pi connections page-timeout — kill phone BT before Pi control.
 
 ## Corrections to prior claims
 
