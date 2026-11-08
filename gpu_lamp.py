@@ -44,7 +44,7 @@ PALETTES = {
     ('busy', 'day'):      {'command': 'THEME.BEAT2.0,0,255,0,0,0,', 'brightness': 80},
     ('busy', 'night'):    {'command': 'THEME.BEAT2.180,10,0,0,0,0,', 'brightness': 20},
     ('low', 'day'):       {'command': 'THEME.TWINKLE1.0,0,255,0,60,0,', 'brightness': 80},
-    ('low', 'night'):     {'command': 'THEME.TWINKLE1.180,10,0,0,60,0,', 'brightness': 20},
+    ('low', 'night'):     {'command': 'THEME.TWINKLE1.180,10,0,0,0,0,', 'brightness': 20},  # green removed per user 2026-11-08 (interim; green-60 variant on file)
     ('extended_low', 'day'):   {'command': 'THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,', 'brightness': 80},
     ('extended_low', 'night'): {'command': 'THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,', 'brightness': 20},
     # Final user selections 2026-11-08: GRADIENT3 red pair, blue day / purple night.

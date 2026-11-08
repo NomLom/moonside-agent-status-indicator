@@ -30,7 +30,7 @@ class StateMapTests(unittest.TestCase):
         self.assertEqual(p[("busy", DAY)]["command"], "THEME.BEAT2.0,0,255,0,0,0,")
         self.assertEqual(p[("busy", NIGHT)]["command"], "THEME.BEAT2.180,10,0,0,0,0,")
         self.assertEqual(p[("low", DAY)]["command"], "THEME.TWINKLE1.0,0,255,0,60,0,")
-        self.assertEqual(p[("low", NIGHT)]["command"], "THEME.TWINKLE1.180,10,0,0,60,0,")
+        self.assertEqual(p[("low", NIGHT)]["command"], "THEME.TWINKLE1.180,10,0,0,0,0,")
         self.assertEqual(p[("extended_low", DAY)]["command"],
                          "THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,")
         self.assertEqual(p[("extended_low", NIGHT)]["command"],
