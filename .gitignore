@@ -27,3 +27,4 @@ config.local.yaml
 
 # Assets
 assets/
+daynight.json
