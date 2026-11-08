@@ -8,7 +8,6 @@
 BLE is single-connection and flaky: one connect per mode change, with retries.
 """
 import subprocess, threading, time, asyncio, collections, sys
-from bleak import BleakClient
 
 GPU_HOST = "slide@192.168.0.90"
 LAMP = "04:B2:47:8C:E1:F6"
@@ -50,16 +49,44 @@ def ssh_stream(stop):
         log("ssh stream died; reconnecting in 3s")
         time.sleep(3)
 
-def write_lamp(cmd_str, tries=3):
+def _bt(*args, timeout=10):
+    try:
+        subprocess.run(["bluetoothctl", *args], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=timeout)
+    except Exception:
+        pass
+
+def _adapter_toggle():
+    """EC-6: cheap adapter reset after connect-refusal storms."""
+    _bt("--timeout", "2", "power", "off"); time.sleep(1)
+    _bt("--timeout", "2", "power", "on"); time.sleep(1)
+
+def _bluez_purge():
+    """EC-2: stale cache / 'Operation already in progress' / stale bond attempts."""
+    _bt("remove", LAMP); _adapter_toggle()
+
+def _try_connect(cmd_str):
     async def one():
-        async with BleakClient(LAMP, timeout=25) as c:
+        from bleak import BleakClient
+        async with BleakClient(LAMP, timeout=15) as c:
             await c.write_gatt_char(TX, cmd_str.encode(), response=True)
+    asyncio.run(one())
+
+def write_lamp(cmd_str, tries=3):
     for a in range(tries):
         try:
-            asyncio.run(one()); return True
+            _try_connect(cmd_str); return True
         except Exception as e:
-            log(f"BLE try {a+1} failed: {type(e).__name__}")
+            msg = str(e)
+            log(f"BLE try {a+1} failed: {type(e).__name__} {msg[:60]}")
+            if "already in progress" in msg or "AuthenticationCanceled" in msg:
+                log("  -> bluez wedged/stale bond; purging cache (EC-2)")
+                _bluez_purge()
+            elif a == tries - 2:
+                log("  -> repeated refusals; toggling adapter (EC-6)")
+                _adapter_toggle()
             time.sleep(2)
+    log("hint: if this persists, check lamp PSU/distance — weak rails drop CONNECT_IND (EC-4)")
     return False
 
 def classify(util, temp):
