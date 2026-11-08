@@ -1,2 +1,8 @@
-# BlinkStick USB LED: allow locally logged-in plugdev users.
-SUBSYSTEM=="usb", ATTR{idVendor}=="20a0", ATTR{idProduct}=="41e5", GROUP="plugdev", MODE="0660"
+# BlinkStick USB LED — the status-indicator runner owns it via pyusb.
+# 1) device node open to plugdev (and everyone: the LED is a lamp, not a vault)
+# 2) kick usbhid off the interface on every connect: BlinkStick's firmware
+#    wedges (Errno 5 / config -22) once usbhid probes it, and pyusb needs a
+#    driverless interface. NEVER call set_configuration() from userspace —
+#    the kernel already set it at enumeration; re-setting it drops the device.
+SUBSYSTEM=="usb", ATTR{idVendor}=="20a0", ATTR{idProduct}=="41e5", MODE="0666", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="20a0", ATTR{idProduct}=="41e5", TEST=="bInterfaceNumber", RUN+="/bin/sh -c 'sleep 1; echo %k > /sys/bus/usb/drivers/usbhid/unbind 2>/dev/null || true'"
