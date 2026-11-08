@@ -40,16 +40,16 @@ STATE_PRIORITY = ['unreachable', 'thermal', 'busy', 'low', 'extended_low']
 # strings; interim entries are documented solid COLORs awaiting user approval.
 PALETTES = {
     ('thermal', 'day'):   {'command': 'THEME.LAVA1.255,60,0,180,0,0,255,0,0,', 'brightness': 80},
-    ('thermal', 'night'): {'command': 'THEME.LAVA1.255,60,0,180,0,0,255,0,0,', 'brightness': 50},
+    ('thermal', 'night'): {'command': 'THEME.LAVA1.255,60,0,180,0,0,255,0,0,', 'brightness': 20},
     ('busy', 'day'):      {'command': 'THEME.BEAT2.0,0,255,0,0,0,', 'brightness': 80},
-    ('busy', 'night'):    {'command': 'THEME.BEAT2.180,10,0,0,0,0,', 'brightness': 50},
+    ('busy', 'night'):    {'command': 'THEME.BEAT2.180,10,0,0,0,0,', 'brightness': 20},
     ('low', 'day'):       {'command': 'THEME.TWINKLE1.0,0,255,0,60,0,', 'brightness': 80},
-    ('low', 'night'):     {'command': 'THEME.TWINKLE1.180,10,0,0,60,0,', 'brightness': 50},
+    ('low', 'night'):     {'command': 'THEME.TWINKLE1.180,10,0,0,60,0,', 'brightness': 20},
     ('extended_low', 'day'):   {'command': 'THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,', 'brightness': 80},
-    ('extended_low', 'night'): {'command': 'THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,', 'brightness': 50},
-    # Interim placeholders (no user selection yet): dark indigo solid for "no data".
-    ('unreachable', 'day'):   {'command': 'COLOR000032240', 'brightness': 60},
-    ('unreachable', 'night'): {'command': 'COLOR000032240', 'brightness': 30},
+    ('extended_low', 'night'): {'command': 'THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,', 'brightness': 20},
+    # Final user selections 2026-11-08: GRADIENT3 red pair, blue day / purple night.
+    ('unreachable', 'day'):   {'command': 'THEME.GRADIENT3.220,0,0,20,0,90,', 'brightness': 60},
+    ('unreachable', 'night'): {'command': 'THEME.GRADIENT3.220,0,0,15,0,25,', 'brightness': 20},
 }
 
 

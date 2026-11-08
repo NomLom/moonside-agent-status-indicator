@@ -35,9 +35,15 @@ class StateMapTests(unittest.TestCase):
                          "THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,")
         self.assertEqual(p[("extended_low", NIGHT)]["command"],
                          "THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,")
-        self.assertEqual(p[("busy", NIGHT)]["brightness"], 50)
-        self.assertEqual(p[("extended_low", NIGHT)]["brightness"], 50)
-        self.assertEqual(p[("unreachable", DAY)]["command"], "COLOR000032240")  # interim solid
+        self.assertEqual(p[("busy", NIGHT)]["brightness"], 20)
+        self.assertEqual(p[("extended_low", NIGHT)]["brightness"], 20)
+        self.assertEqual(p[("thermal", NIGHT)]["brightness"], 20)
+        self.assertEqual(p[("low", NIGHT)]["brightness"], 20)
+        self.assertEqual(p[("unreachable", NIGHT)]["brightness"], 20)
+        self.assertEqual(p[("unreachable", DAY)]["command"],
+                         "THEME.GRADIENT3.220,0,0,20,0,90,")
+        self.assertEqual(p[("unreachable", NIGHT)]["command"],
+                         "THEME.GRADIENT3.220,0,0,15,0,25,")
 
     def test_priority_order_documented(self):
         self.assertEqual(g.STATE_PRIORITY,
