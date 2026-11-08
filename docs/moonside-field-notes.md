@@ -50,12 +50,14 @@ not an assigned state palette. Unverified theme strings are not sent.
 | Priority | State | Trigger | Day palette | Night palette |
 | --- | --- | --- | --- | --- |
 | 1 | Unreachable | no fresh Spark sample (~10 s) | `THEME.GRADIENT3.220,0,0,20,0,90,` @60 red/deep-blue (user: earmark, promoted) | `THEME.GRADIENT3.220,0,0,15,0,25,` @20 red/deep-violet |
-| 2 | High thermal | temp >85°C | `THEME.LAVA1.255,60,0,180,0,0,255,0,0,` @80 (user: "that's our 2") | same command @20 |
+| 2 | High thermal | temp >85°C | `THEME.LAVA1.255,60,0,180,0,0,255,0,0,` @80 (user: "that's our 2") | same command @100 (safety exception, user: "thermal aye 100%") |
 | 3 | Above 50% | util >50% | `THEME.BEAT2.0,0,255,0,0,0,` @80 blue/black | `THEME.BEAT2.180,10,0,0,0,0,` @20 |
 | 4 | Below 50% | util ≤50% | `THEME.TWINKLE1.0,0,255,0,60,0,` @80 blue+dark green | `THEME.TWINKLE1.180,10,0,0,60,0,` @20 ember+dark green |
 | 5 | Extended low | util ≤50% for 30+ min continuous | `THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,` @80 cyan/cyan/white | `THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,` @20 red/deep-purple embers |
 
-All night palettes sit at `BRIGH20` by user instruction (2026-11-08).
+All night palettes sit at `BRIGH20` by user instruction (2026-11-08), except
+**thermal night = `BRIGH100`** — the user's explicit safety override so an
+overheat is impossible to miss in the dark.
 
 Earlier drafts of this doc mislabelled these (LAVA1 as "calm state 2", BEAT2 as
 "nighttime 3 = thermal"). Corrected 2026-11-08 after user restated the state

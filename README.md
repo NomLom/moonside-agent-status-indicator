@@ -107,7 +107,7 @@ as below; see `docs/moonside-field-notes.md` for evidence and history):
 | # | State | Trigger | Day | Night |
 |---|-------|---------|-----|-------|
 | 1 | Unreachable | no fresh Spark sample ~10 s | `THEME.GRADIENT3.220,0,0,20,0,90,` @60 | `THEME.GRADIENT3.220,0,0,15,0,25,` @20 |
-| 2 | High thermal | temp > 85 °C | `THEME.LAVA1.255,60,0,180,0,0,255,0,0,` | same, @20 |
+| 2 | High thermal | temp > 85 °C | `THEME.LAVA1.255,60,0,180,0,0,255,0,0,` | same, @100 (safety exception) |
 | 3 | Above 50% | util > 50% | `THEME.BEAT2.0,0,255,0,0,0,` | `THEME.BEAT2.180,10,0,0,0,0,` @20 |
 | 4 | Below 50% | util ≤ 50% | `THEME.TWINKLE1.0,0,255,0,60,0,` | `THEME.TWINKLE1.180,10,0,0,60,0,` @20 |
 | 5 | Extended low | util ≤ 50% for 30+ min | `THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,` | `THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,` @20 |

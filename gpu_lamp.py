@@ -40,7 +40,7 @@ STATE_PRIORITY = ['unreachable', 'thermal', 'busy', 'low', 'extended_low']
 # strings; interim entries are documented solid COLORs awaiting user approval.
 PALETTES = {
     ('thermal', 'day'):   {'command': 'THEME.LAVA1.255,60,0,180,0,0,255,0,0,', 'brightness': 80},
-    ('thermal', 'night'): {'command': 'THEME.LAVA1.255,60,0,180,0,0,255,0,0,', 'brightness': 20},
+    ('thermal', 'night'): {'command': 'THEME.LAVA1.255,60,0,180,0,0,255,0,0,', 'brightness': 100},
     ('busy', 'day'):      {'command': 'THEME.BEAT2.0,0,255,0,0,0,', 'brightness': 80},
     ('busy', 'night'):    {'command': 'THEME.BEAT2.180,10,0,0,0,0,', 'brightness': 20},
     ('low', 'day'):       {'command': 'THEME.TWINKLE1.0,0,255,0,60,0,', 'brightness': 80},

@@ -37,7 +37,7 @@ class StateMapTests(unittest.TestCase):
                          "THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,")
         self.assertEqual(p[("busy", NIGHT)]["brightness"], 20)
         self.assertEqual(p[("extended_low", NIGHT)]["brightness"], 20)
-        self.assertEqual(p[("thermal", NIGHT)]["brightness"], 20)
+        self.assertEqual(p[("thermal", NIGHT)]["brightness"], 100)  # safety exception
         self.assertEqual(p[("low", NIGHT)]["brightness"], 20)
         self.assertEqual(p[("unreachable", NIGHT)]["brightness"], 20)
         self.assertEqual(p[("unreachable", DAY)]["command"],
