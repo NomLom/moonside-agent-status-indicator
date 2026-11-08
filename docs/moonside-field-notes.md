@@ -64,23 +64,27 @@ stable samples. Day/night switching itself is not implemented yet.
 
 ## Theme shortlist (not assigned)
 
-- `THEME.BEAT2.180,10,0,0,0,0,` at `BRIGH50` — **user-approved "nighttime 3"** after iterative visual tuning. This is a night-palette label, not permission to replace the high-thermal solid-red safety override. No time-of-day switching implemented yet.
-- `THEME.BEAT2.0,0,255,0,0,0,` — blue + black BEAT2, **earmarked for "daytime 3"** in the user's words. This is a candidate only; do **not** replace state 3's solid-red high-thermal override without explicit clarification.
-- `THEME.THEME2.255,80,0,0,120,255,` — delivered over BLE and **earmarked by user** for later consideration; no state assigned yet. Do not add it to the automatic state map until the user chooses its state.
-- `THEME.TWINKLE1.180,10,0,0,60,0,` — night ember + dark green TWINKLE1 — **user-approved "nighttime 4"**: the palette for state 4 (Spark unreachable), night variant. State 4 logic itself is still unimplemented.
+- `THEME.GRADIENT3.220,0,0,20,0,90,` @`BRIGH60` — **earmarked "daytime 1"**: candidate daytime palette for unreachable (matched red/deep-blue gradient, blue iterated down from `30,0,130`). Interim indigo stays live until promoted.
+- `THEME.WAVE1.220,0,0,30,0,130,` — same palette in WAVE1, tested; superseded by the GRADIENT3 earmark.
+- `THEME.THEME2.255,80,0,0,120,255,` — **earmarked** for later consideration; no state assigned.
 - `THEME.TWINKLE1.200,140,30,0,60,0,` and `THEME.TWINKLE1.255,180,40,0,60,0,` — intermediate variants, superseded by the 180,10,0 selection.
+- `THEME.TWINKLE1.255,255,255,0,120,255,`, PULSING1/FIRE2/COLORDROP1/GRADIENT2 variants — exploratory sends, unassigned.
 
-## Controller behavior
+Still awaiting user selection: **nighttime 1** (unreachable), and promotion of the
+daytime-1 earmark. Approved day/night palettes live in the state table above.
+
+## Controller behaviour (five-state engine, shipped 2026-11-08)
 
 - One event loop, persistent SSH `nvidia-smi -lms 1000` and independent BLE writer.
-- Strict util >50 busy, temp >85 hot (priority); candidate stable for monotonic 2s.
-- Startup has no desired state until a live GPU sample has held for the 2-second
-  debounce; with Spark offline, no BLE command is sent. Delivery remains unknown
-  until the complete write succeeds.
-- Successful unchanged modes produce no repeated writes. The connection is retained
-  without periodic GATT writes; subsequent mode changes reconnect if disconnected.
-- Failed unchanged modes retry with 2/4/8/16/30s capped backoff after each attempt.
-  A newly desired mode does not wait for the old mode's backoff.
+- States in priority order: unreachable (stale >10 s), thermal (>85 °C), busy
+  (>50%), low (≤50%), extended_low (≤50% for 30 continuous min; timer resets on
+  busy/thermal/stale). Candidate stable 2 s before commit; the first observation
+  commits immediately, so boot shows unreachable until Spark answers.
+- Day/night via `daynight.is_day()` from `daynight.json` (Open-Meteo daily cron;
+  astral fallback script). A day/night flip is a state change and repaints once.
+- Successful unchanged states produce no repeated writes; persistent connection,
+  reconnect on demand. BLE failures back off 2,4,8…capped at **600 s** (phone may
+  hold the lamp); a new desired state resets the ladder instantly.
 - Scan actual MOONSIDE names, prefer configured address among candidates, then
   validate Nordic UART service and TX before any command writes.
 - Same-script singleton lock; SIGINT/SIGTERM cancels tasks, terminates and waits for
@@ -88,7 +92,9 @@ stable samples. Day/night switching itself is not implemented yet.
 - No automatic pairing, removal, adapter resets, or hardware-cause speculation.
 
 Hardware-free regression command:
-` .venv/bin/python -m unittest discover -s tests -p test_gpu_lamp.py -v `
+` .venv/bin/python -m unittest discover -s tests -q `
+(tests.test_gpu_lamp_states, tests.test_gpu_lamp, tests.test_daynight — plus the
+repo's other suites; one pre-existing emoji-font error unrelated to the lamp)
 
 These regressions validate code behavior using injected IO; they do not claim a
 successful BLE connection or a visible lamp response. Live BLE diagnosis belongs
