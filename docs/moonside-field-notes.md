@@ -121,3 +121,46 @@ repo's other suites; one pre-existing emoji-font error unrelated to the lamp)
 These regressions validate code behavior using injected IO; they do not claim a
 successful BLE connection or a visible lamp response. Live BLE diagnosis belongs
 to the parent session; this change did not operate the lamp or services.
+
+## 2026-11-12 — Root cause of the "BLE delivery failed" saga (2 days lost)
+
+**CORRECTION (same day, after reading the code):** cause 1 as originally written
+was WRONG. `blinkstick_status.py` is BlinkStick **USB** only — `from blinkstick
+import blinkstick`, `blinkstick.find_first()` (lines 23, 343, 395); it contains
+no bleak/BLE/MAC code whatsoever. It could not have contended for the lamp's
+connection slot, and the `state=thinking live=1` log lines I read as slot-grabbing
+were USB-LED writes. It was disabled for housekeeping, not because it caused this.
+
+**Revised cause 1 — the real second central: an external BLE central holding the
+O101's single slot.** Confirmed by design in `claude-lamp/claude_hooks/moonside_daemon.py`
+("maintains persistent BLE connection", line 3; `connect_with_retry` at 127 then a
+0.2 s poll loop that reconnects only on drop at 145/165). Any machine running that
+daemon holds the link; a `while True` + reconnect-only-on-drop loop on a one-seat
+peripheral produces exactly the observed pattern — long stretches of
+`failed to discover services, device disconnected`, occasional successes in the
+reconnect gaps, and a lamp that is scan-visible but won't talk. The owner's phone
+pairing instantly the whole time was the disproof of every radio/kernel theory.
+**Not yet verified which machine ran it** — that is the open question, not the mechanism.
+
+**Cause 2 (holds independently, evidenced by btmon):** repeated orphaned connections
+**wedge the lamp-side BLE stack**: it keeps
+   advertising (even scan-visible) but supervision-times-out every new
+   central (btmon: `LE Connection Complete: Success` then `Disconnect
+   Complete: Reason: Connection Timeout (0x08)`). Only a lamp power-cycle
+   recovers it. Pi-side adapter resets, BlueZ removals, driver experiments
+   and rfkill dance do NOT clear it.
+
+**Diagnostic fast path (do these FIRST, before any theory):**
+```bash
+systemctl --user list-units | grep -iE 'lamp|blink|status'   # other centrals?
+ps aux | grep -iE 'bleak|bluepy|gatt|lamp' | grep -v grep
+hcitool con   # or busctl tree org.bluez | grep dev_
+```
+Then one root `btmon -w` capture during attempts: connection-success +
+timeout-0x08 disconnect = lamp-side wedge = ask for a power flip.
+
+**Process lesson:** six hours were spent on BlueZ-table, kernel-driver and
+Wi-Fi-coexistence theories while `ps aux`/`systemctl --user list-units` — a
+two-minute enumeration that names the competing daemon — was never run.
+The competing daemon lived inside the repo the owner pointed at repeatedly.
+Exhaust the free local checks before theorising about radios and kernels.
