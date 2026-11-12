@@ -7,7 +7,10 @@ extended low (util <=50% for 30 continuous min). Day/night from daynight.json
 (follows fetched sunrise/sunset; defaults to day). One asyncio loop: telemetry
 reader independent of a persistent BLE writer; one write per committed change;
 never repaints an unchanged delivered state; BLE retry backoff caps at 10 min so
-a phone grabbing the lamp causes silence, not radio hammering.
+a phone grabbing the lamp causes silence, not radio hammering. One-central
+etiquette (from claude-lamp's daemon): cached device on reconnect (no scan
+hammer), polite release of the link after 30 min quiet (phone may pair), every
+link untied via disconnect() — never orphaned.
 
 ATT delivery is not visual verification. No pairing, no device removal, no
 adapter resets.
@@ -33,6 +36,7 @@ SAMPLE_MS = 1000
 STALE_AFTER_S = 10.0
 EXTENDED_LOW_S = 30 * 60.0
 BACKOFF_CAP_S = 600.0  # 10 min: user may hold the lamp on the phone
+IDLE_RELEASE_S = 30 * 60.0  # release the one-central link when quiet (moonside_daemon etiquette)
 
 STATE_PRIORITY = ['unreachable', 'thermal', 'busy', 'low', 'extended_low']
 
@@ -134,6 +138,12 @@ class Controller:
 
 
 class LampWriter:
+    """One-central etiquette (ported from claude-lamp/moonside_daemon.py):
+    hold the link while working, release it politely when idle so the phone
+    app can pair, reuse the discovered device on reconnect instead of
+    scan-hammering, and always untie links via disconnect() — orphaned
+    connections wedge the lamp stack (btmon: connect Success -> 0x08)."""
+
     def __init__(self, address=LAMP, scan=None, client_factory=None):
         if scan is None or client_factory is None:
             from bleak import BleakClient, BleakScanner
@@ -141,6 +151,8 @@ class LampWriter:
             client_factory = client_factory or BleakClient
         self.address, self.scan, self.client_factory = address, scan, client_factory
         self.client = None
+        self.cached_device = None
+        self.last_activity = 0.0
 
     async def close(self):
         client, self.client = self.client, None
@@ -148,29 +160,55 @@ class LampWriter:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(client.disconnect(), 5)
 
+    async def _attempt(self, device):
+        """Connect one device and validate the UART; raise (link closed) on failure."""
+        self.client = self.client_factory(device, timeout=15)
+        try:
+            await self.client.connect()
+            service = self.client.services.get_service(SERVICE)
+            if not self.client.is_connected or service is None or not any(
+                    char.uuid.lower() == TX for char in service.characteristics):
+                raise RuntimeError('MOONSIDE lacks Nordic UART service/TX')
+            self.last_activity = time.monotonic()
+        except Exception:
+            await self.close()
+            raise
+
     async def connect(self):
         if self.client is not None and self.client.is_connected:
+            self.last_activity = time.monotonic()
             return
         await self.close()
+        if self.cached_device is not None:
+            try:
+                await self._attempt(self.cached_device)   # cheap path: no scan
+                return
+            except Exception:
+                pass                                       # stale cache: rescan below
         found = await self.scan(timeout=8, return_adv=True)
         devices = [device for device, adv in found.values()
                    if (adv.local_name or device.name or '').upper().startswith('MOONSIDE')]
         devices.sort(key=lambda d: d.address.upper() != self.address.upper())
         if not devices:
             raise RuntimeError('No MOONSIDE name observed in scan')
+        last_exc: BaseException = RuntimeError('No MOONSIDE connect attempt ran')
         for device in devices:
-            self.client = self.client_factory(device, timeout=15)
             try:
-                await self.client.connect()
-                service = self.client.services.get_service(SERVICE)
-                if not self.client.is_connected or service is None or not any(
-                        char.uuid.lower() == TX for char in service.characteristics):
-                    raise RuntimeError('MOONSIDE lacks Nordic UART service/TX')
+                await self._attempt(device)
+                self.cached_device = device
                 return
-            except Exception:
-                await self.close()
-                if device is devices[-1]:
-                    raise
+            except Exception as exc:
+                last_exc = exc
+        raise last_exc
+
+    async def maybe_release(self, now=None):
+        """Politely give up the single central slot after a quiet period.
+        The lamp persists its last state; the controller's delivered marker
+        stays valid, so no repaint happens on the next state change."""
+        if (self.client is not None and self.client.is_connected
+                and now - self.last_activity >= IDLE_RELEASE_S):
+            await self.close()
+            log('BLE link released after idle; lamp keeps last state')
 
     async def _write_cmd(self, client, data):
         # Post-reboot O101 (EC-7, 2026-11-08) rejects ATT write *requests*
@@ -192,6 +230,7 @@ class LampWriter:
             await self._write_cmd(client, b'LEDON')
             await self._write_cmd(client, f"BRIGH{palette['brightness']}".encode())
             await self._write_cmd(client, palette['command'].encode())
+            self.last_activity = time.monotonic()
         except BaseException:
             await self.close()
             raise
@@ -264,8 +303,10 @@ async def run():
         f'extended>{int(EXTENDED_LOW_S)}s backoff cap {int(BACKOFF_CAP_S)}s')
     try:
         while True:
-            controller.observe(now=time.monotonic())
+            now = time.monotonic()
+            controller.observe(now=now)
             await controller.deliver(writer)
+            await writer.maybe_release(now=now)
             await asyncio.sleep(0.25)
     finally:
         reader.cancel()
