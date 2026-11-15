@@ -6,8 +6,9 @@ sample ~10 s), 2 thermal (>85 C), 3 busy (util >50%), 4 low (util <=50%), 5
 extended low (util <=50% for 30 continuous min). Day/night from daynight.json
 (follows fetched sunrise/sunset; defaults to day). One asyncio loop: telemetry
 reader independent of a persistent BLE writer; one write per committed change;
-never repaints an unchanged delivered state; BLE retry backoff caps at 10 min so
-a phone grabbing the lamp causes silence, not radio hammering. One-central
+never repaints an unchanged delivered state; BLE retries follow the claude-lamp
+ladder (1..16s) then fall SILENT until the next state change — an infinite
+capped ladder re-wedges a one-central lamp. One-central
 etiquette (from claude-lamp's daemon): cached device on reconnect (no scan
 hammer), polite release of the link after 30 min quiet (phone may pair), every
 link untied via disconnect() — never orphaned.
@@ -35,7 +36,7 @@ DEBOUNCE_S = 2.0
 SAMPLE_MS = 1000
 STALE_AFTER_S = 10.0
 EXTENDED_LOW_S = 30 * 60.0
-BACKOFF_CAP_S = 600.0  # 10 min: user may hold the lamp on the phone
+RETRY_LADDER = (1.0, 2.0, 4.0, 8.0, 16.0)  # claude-lamp connect_with_retry; then silence
 IDLE_RELEASE_S = 30 * 60.0  # release the one-central link when quiet (moonside_daemon etiquette)
 
 STATE_PRIORITY = ['unreachable', 'thermal', 'busy', 'low', 'extended_low']
@@ -128,9 +129,17 @@ class Controller:
         except Exception as exc:
             self.delivered = None  # partial sequence leaves physical state unknown
             self.failures += 1
-            delay = min(BACKOFF_CAP_S, 2 ** min(self.failures, 10))
-            self.retry_at = (time.monotonic() if realtime else now) + delay
-            log(f'BLE delivery failed ({type(exc).__name__}: {exc}); retry in {delay}s')
+            if self.failures <= len(RETRY_LADDER):
+                delay = RETRY_LADDER[self.failures - 1]
+                self.retry_at = (time.monotonic() if realtime else now) + delay
+                log(f'BLE delivery failed ({type(exc).__name__}: {exc}); retry in {delay}s')
+            else:
+                # claude-lamp etiquette: ladder exhausted -> silence, not a
+                # 600s-cap hammer that re-wedges the lamp for days. Only a
+                # state change (or service restart) reconnects.
+                self.retry_at = float('inf')
+                log(f'BLE delivery failed ({type(exc).__name__}: {exc}); ladder exhausted, '
+                    'silent until state change (lamp may need a power cycle)')
         else:
             self.delivered = target
             self.failures = 0
@@ -300,7 +309,7 @@ async def run():
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, task.cancel)
     log(f'gpu-lamp up: states={">".join(STATE_PRIORITY)} stale>{STALE_AFTER_S}s '
-        f'extended>{int(EXTENDED_LOW_S)}s backoff cap {int(BACKOFF_CAP_S)}s')
+        f'extended>{int(EXTENDED_LOW_S)}s ladder={RETRY_LADDER} then silent')
     try:
         while True:
             now = time.monotonic()

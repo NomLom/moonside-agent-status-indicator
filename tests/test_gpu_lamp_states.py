@@ -153,23 +153,34 @@ class DeliverTests(unittest.IsolatedAsyncioTestCase):
         await c.deliver(writer, 999)
         self.assertEqual(writer.send.await_count, 1)
 
-    async def test_ble_retry_backoff_caps_at_ten_minutes(self):
-        """Phone grabbing the lamp or a radio drop must not cause hammering."""
+    async def test_retry_uses_claude_lamp_ladder_then_goes_silent(self):
+        """Repo-faithful (moonside_daemon connect_with_retry): fixed ladder
+        1,2,4,8,16s, then SILENCE until the state changes. An infinite capped
+        ladder re-wedges a one-central lamp (297 attempts over 3 days, 2026-11)."""
         c = g.Controller(is_day=lambda path=None, now=None: True)
         for t in (0, 2):
             c.observe(util=10, temp=50, now=t)
         writer = SimpleNamespace(send=AsyncMock(side_effect=OSError("no link")))
         now = 3.0
         delays = []
-        for _ in range(12):
+        for _ in range(5):
             await c.deliver(writer, now)
             delays.append(c.retry_at - now)
             now = c.retry_at
-        self.assertEqual(delays[:4], [2.0, 4.0, 8.0, 16.0])
-        self.assertEqual(delays[-3:], [600.0, 600.0, 600.0])
-        # recovery: success resets the ladder
-        writer.send.side_effect = None
+        self.assertEqual(delays, [1.0, 2.0, 4.0, 8.0, 16.0])
+        # ladder exhausted: sixth failure goes silent, no scheduled hammering
         await c.deliver(writer, now)
+        self.assertEqual(c.failures, 6)
+        self.assertEqual(c.retry_at, float("inf"))
+        await c.deliver(writer, now + 100000)          # time alone changes nothing
+        self.assertEqual(writer.send.await_count, 6)
+        # a state change is the ONLY wake (repo: connect happens on transition)
+        for t in (now + 100002, now + 100004):
+            c.observe(util=90, temp=50, now=t)
+        writer.send.side_effect = None                  # lamp recovered
+        await c.deliver(writer, now + 100004)
+        self.assertEqual(writer.send.await_count, 7)
+        # recovery resets the ladder
         self.assertEqual(c.failures, 0)
         self.assertIsNotNone(c.delivered)
 
