@@ -18,6 +18,35 @@ def day_controller():
 
 
 class IOTests(unittest.IsolatedAsyncioTestCase):
+    async def test_default_scan_uses_usb_controller(self):
+        """The onboard Pi radio drops this lamp at HCI 0x3e; production scans
+        must stay pinned to the verified AIC USB controller."""
+        dev = SimpleNamespace(address=g.LAMP, name='MOONSIDE-O101')
+        service = SimpleNamespace(characteristics=[SimpleNamespace(uuid=g.TX)])
+        scan = AsyncMock(return_value={
+            'd': (dev, SimpleNamespace(local_name=dev.name)),
+        })
+
+        def new_client(device, **kwargs):
+            client = SimpleNamespace(
+                is_connected=False,
+                services=SimpleNamespace(get_service=lambda uuid: service),
+                disconnect=AsyncMock())
+
+            async def connect():
+                client.is_connected = True
+            client.connect = connect
+            return client
+
+        with patch('bleak.BleakScanner.discover', scan), \
+                patch('bleak.BleakClient', side_effect=new_client):
+            writer = g.LampWriter()
+            await writer.connect()
+            await writer.close()
+
+        scan.assert_awaited_once_with(timeout=8, return_adv=True,
+                                      adapter='hci1')
+
     async def test_writer_validates_uart_then_sends_brightness_and_command(self):
         self.assertTrue(hasattr(g, 'LampWriter'), 'persistent BLE writer missing')
         dev = SimpleNamespace(address=g.LAMP, name='MOONSIDE-O101')

@@ -112,10 +112,14 @@ as below; see `docs/moonside-field-notes.md` for evidence and history):
 | 4 | Below 50% | util ≤ 50% | `THEME.TWINKLE1.0,0,255,0,60,0,` | `THEME.TWINKLE1.180,10,0,0,60,0,` @20 |
 | 5 | Extended low | util ≤ 50% for 30+ min | `THEME.GRADIENT2.8,175,212,8,175,212,255,255,255,` | `THEME.FIRE2.0,0,0,255,0,0,25,0,45,255,0,0,` @20 |
 
-BLE facts that save hours: no bonding required (`pair=False`; forced pairing fails
-`AuthenticationCanceled`); the lamp stops advertising to strangers while a central
-(usually the phone app) holds it; command ACKs are ATT-layer only — visual
-confirmation is the real check; theme names must come from the documented catalog.
+BLE facts that save hours: this O101 does not complete BlueZ SMP bonding on the Pi
+(`pair` reached the link, then failed `AuthenticationTimeout`); its UART remains
+controllable over a trusted GATT connection. Production is pinned to the AIC USB
+controller (`hci1`): the Pi's onboard Cypress `hci0` repeatedly reached LE Connection
+Complete, then failed Remote Used Features with HCI `0x3e`/`0x08` before ATT. The lamp
+stops advertising to strangers while a central (usually the phone app) holds it;
+command ACKs are ATT-layer only — visual confirmation is the real check; theme names
+must come from the documented catalog.
 
 ### Day/night selection
 

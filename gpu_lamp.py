@@ -28,6 +28,7 @@ import daynight
 
 GPU_HOST = 'slide@192.168.0.90'
 LAMP = '04:B2:47:8C:E1:F6'
+BLE_ADAPTER = 'hci1'  # AIC USB; onboard hci0 drops this lamp at HCI 0x3e
 SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
 TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'
 HIGH_UTIL = 50
@@ -154,6 +155,7 @@ class LampWriter:
     connections wedge the lamp stack (btmon: connect Success -> 0x08)."""
 
     def __init__(self, address=LAMP, scan=None, client_factory=None):
+        self.adapter = BLE_ADAPTER if scan is None else None
         if scan is None or client_factory is None:
             from bleak import BleakClient, BleakScanner
             scan = scan or BleakScanner.discover
@@ -194,7 +196,10 @@ class LampWriter:
                 return
             except Exception:
                 pass                                       # stale cache: rescan below
-        found = await self.scan(timeout=8, return_adv=True)
+        scan_options = {'timeout': 8, 'return_adv': True}
+        if self.adapter is not None:
+            scan_options['adapter'] = self.adapter
+        found = await self.scan(**scan_options)
         devices = [device for device, adv in found.values()
                    if (adv.local_name or device.name or '').upper().startswith('MOONSIDE')]
         devices.sort(key=lambda d: d.address.upper() != self.address.upper())

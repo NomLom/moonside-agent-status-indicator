@@ -50,6 +50,31 @@ sequences nor claims of saved-mode persistence were established by these tests.
 Do not infer that removing a device, pairing, resetting the adapter, changing power,
 or holding buttons is necessary or safe recovery for this incident.
 
+## 2026-11-19 — onboard-radio failure and USB-controller recovery
+
+A root `btmon` capture settled the current failure stage. The onboard Pi 5 Cypress
+controller (`hci0`) observed the O101 advertisement and reported LE Connection
+Complete, then failed `LE Read Remote Used Features` with HCI `0x3e` or `0x08` and
+disconnected before any ATT or SMP exchange. `bluetoothctl pair` likewise reached
+`Connected: yes` but ended `AuthenticationTimeout`; no bond was created. The lamp
+was already on a clean power source, and a power cycle did not alter this signature.
+This is not a command, theme, pairing-agent, or power-supply failure.
+
+The installed AIC8800 USB combo adapter exposed `hci1` as
+`00:00:00:00:00:00` and failed HCI Reset because `chip_mcu_id=1` hardware was running
+the mismatched main/MCU0 firmware. The proven upstream `shenmintao/aic8800d80`
+`legacy-mcu1` branch (revision `630f4eb`) was installed as a matched DKMS+firmware
+set. After USB reset it enumerated as `a69c:8d81`, exposed a working Bluetooth 5.4
+controller, and received a real address. A bounded manual write through
+`/org/bluez/hci1/dev_04_B2_47_8C_E1_F6` delivered `LEDON`, `BRIGH20`, and the exact
+low/night theme. Production now pins discovery to `hci1`; on service restart it
+logged successful ATT deliveries for `unreachable/night` and `low/night`, with
+BlueZ reporting `Connected=true` and `ServicesResolved=true` on the hci1 device.
+
+The old AIC source and firmware are recoverable from `/var/backups`; do not mix main
+and legacy MCU1 firmware. The onboard controller remains available for unrelated
+Bluetooth traffic but is not a valid O101 route on this host.
+
 The old claim that Python text-file iteration necessarily buffers until a block
 fills and causes this SSH stall was not established. Both iteration and readline
 can stream lines. The demonstrated architectural risk was consuming telemetry in
